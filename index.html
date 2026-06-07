@@ -2019,38 +2019,45 @@ render();
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
 var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays'];
-var _docRef=null,_applyingRemote=false,_cloudTimer=null,_lastTs=0;
-function cloudSave(force){
+var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0;
+function cloudSave(){
   if(!_docRef||_applyingRemote)return;
+  _pendingWrite=true;
   clearTimeout(_cloudTimer);
-  _cloudTimer=setTimeout(()=>{
-    const o={_ts:Date.now()};_lastTs=o._ts;
-    CLOUD_KEYS.forEach(k=>{o[k]=S[k];});
-    _docRef.set(o,{merge:true}).catch(e=>console.warn('Cloud opslaan mislukt',e));
-  },force?0:800);
+  _cloudTimer=setTimeout(function(){
+    var o={_ts:Date.now()};
+    CLOUD_KEYS.forEach(function(k){o[k]=S[k];});
+    _lastAppliedTs=o._ts;
+    _docRef.set(o,{merge:true}).then(function(){_pendingWrite=false;})
+      .catch(function(e){_pendingWrite=false;console.warn('Cloud opslaan mislukt',e);});
+  },500);
+}
+function applyRemote(d){
+  _applyingRemote=true;
+  CLOUD_KEYS.forEach(function(k){if(d[k]!==undefined)S[k]=d[k];});
+  if(!(S.qSelected instanceof Set))S.qSelected=new Set();
+  try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}
+  render();
+  _applyingRemote=false;
 }
 function initCloud(){
-  const c=window.FIREBASE_CONFIG;
+  var c=window.FIREBASE_CONFIG;
   if(!window.firebase||!c||String(c.apiKey).indexOf('PLAATS')===0){
     console.warn('Firebase niet ingesteld - app werkt enkel lokaal.');return;
   }
   try{
     firebase.initializeApp(c);
-    const db=firebase.firestore();
+    var db=firebase.firestore();
     _docRef=db.collection('planning').doc('gedeeld');
-    _docRef.onSnapshot(snap=>{
-      if(!snap.exists){cloudSave(true);return;}
+    _docRef.onSnapshot(function(snap){
+      if(!snap.exists){cloudSave();return;}
       if(snap.metadata.hasPendingWrites)return;
-      const d=snap.data();
-      if(d._ts&&d._ts===_lastTs)return;
-      _applyingRemote=true;
-      CLOUD_KEYS.forEach(k=>{if(d[k]!==undefined)S[k]=d[k];});
-      if(!(S.qSelected instanceof Set))S.qSelected=new Set();
-      save();
-      _applyingRemote=false;
-      render();
-      if(typeof toast==='function')toast('Planning gesynchroniseerd');
-    },err=>console.warn('Cloud sync fout',err));
+      if(_pendingWrite)return;
+      var d=snap.data();
+      if(!d._ts||d._ts<=_lastAppliedTs)return;
+      _lastAppliedTs=d._ts;
+      applyRemote(d);
+    },function(err){console.warn('Cloud sync fout',err);});
   }catch(e){console.warn('Firebase init fout',e);}
 }
 initCloud();
