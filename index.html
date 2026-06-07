@@ -2018,8 +2018,8 @@ render();
 // ========================================
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
-const CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays'];
-let _docRef=null,_applyingRemote=false,_cloudTimer=null,_lastTs=0;
+var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays'];
+var _docRef=null,_applyingRemote=false,_cloudTimer=null,_lastTs=0;
 function cloudSave(force){
   if(!_docRef||_applyingRemote)return;
   clearTimeout(_cloudTimer);
