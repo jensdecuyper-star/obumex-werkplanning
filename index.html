@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <title>Obumex — Werkplanning</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase voor gedeelde opslag -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// FIREBASE CONFIG - vervang deze waarden door die van je eigen Firebase-project
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyD91-IXDBEchW20ECxh3fvRKEiujkeLLWE",
+  authDomain: "obumex-werkplanning.firebaseapp.com",
+  projectId: "obumex-werkplanning",
+  storageBucket: "obumex-werkplanning.firebasestorage.app",
+  messagingSenderId: "33507549385",
+  appId: "1:33507549385:web:afcd3c582c7de0a74f6d18"
+};
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -505,6 +519,7 @@ let S = {
 // ════════════════════════════════════════
 function save(){
   try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}
+  if(typeof cloudSave==='function') cloudSave();
 }
 function load(){
   try{
@@ -2000,6 +2015,45 @@ setInterval(()=>{
 // normalize cel values
 S.jobs.forEach(j=>{const cu=(j.cel||'').toUpperCase();j.cel=cu==='CNC'?'CNC':cu==='BANKWERK'?'Bankwerk':j.cel;});
 render();
+// ========================================
+// CLOUD SYNC (Firebase Firestore) - gedeelde opslag
+// ========================================
+const CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays'];
+let _docRef=null,_applyingRemote=false,_cloudTimer=null,_lastTs=0;
+function cloudSave(force){
+  if(!_docRef||_applyingRemote)return;
+  clearTimeout(_cloudTimer);
+  _cloudTimer=setTimeout(()=>{
+    const o={_ts:Date.now()};_lastTs=o._ts;
+    CLOUD_KEYS.forEach(k=>{o[k]=S[k];});
+    _docRef.set(o,{merge:true}).catch(e=>console.warn('Cloud opslaan mislukt',e));
+  },force?0:800);
+}
+function initCloud(){
+  const c=window.FIREBASE_CONFIG;
+  if(!window.firebase||!c||String(c.apiKey).indexOf('PLAATS')===0){
+    console.warn('Firebase niet ingesteld - app werkt enkel lokaal.');return;
+  }
+  try{
+    firebase.initializeApp(c);
+    const db=firebase.firestore();
+    _docRef=db.collection('planning').doc('gedeeld');
+    _docRef.onSnapshot(snap=>{
+      if(!snap.exists){cloudSave(true);return;}
+      if(snap.metadata.hasPendingWrites)return;
+      const d=snap.data();
+      if(d._ts&&d._ts===_lastTs)return;
+      _applyingRemote=true;
+      CLOUD_KEYS.forEach(k=>{if(d[k]!==undefined)S[k]=d[k];});
+      if(!(S.qSelected instanceof Set))S.qSelected=new Set();
+      save();
+      _applyingRemote=false;
+      render();
+      if(typeof toast==='function')toast('Planning gesynchroniseerd');
+    },err=>console.warn('Cloud sync fout',err));
+  }catch(e){console.warn('Firebase init fout',e);}
+}
+initCloud();
 </script>
 </body>
 </html>
