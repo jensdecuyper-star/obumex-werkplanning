@@ -1360,7 +1360,7 @@ function importRows(rows){
   // Orders niet meer in export:
   const allPlanned=allAssigned(); // Set van alle ingeplande job-ids
   let removed=0;
-  S.jobs.forEach(j=>{
+  if(importNrs.size>0) S.jobs.forEach(j=>{
     if(j.done||!j.nr||j.nr==='–')return;
     if(!importNrs.has(j.nr)){
       if(allPlanned.has(j.id)){
@@ -1373,8 +1373,9 @@ function importRows(rows){
   });
 
   // Nieuwe orders toevoegen / deadline bijwerken
-  const existing=new Map(S.jobs.filter(j=>!j.done).map(j=>[j.nr,j]));
-  let added=0,upd=0,skip=0;
+  const existing=new Map();
+  S.jobs.forEach(j=>{ if(j.nr&&j.nr!=='–') existing.set(j.nr,j); });
+  let added=0,upd=0,skip=0,revived=0;
   const dlChanges=[];
   rows.slice(hi+1).forEach(row=>{
     if(!row||row.every(c=>!c))return;
@@ -1389,6 +1390,8 @@ function importRows(rows){
     if(!cel){skip++;return;}
     if(existing.has(nr)){
       const ex=existing.get(nr);
+      if(ex.done){ex.done=false;revived++;}
+      if(desc)ex.desc=desc; if(klant)ex.klant=klant; ex.cel=cel;
       // Deadline bijwerken indien gewijzigd
       if(dl&&ex.deadline!==dl){
         dlChanges.push({nr:ex.nr,desc:ex.desc,old:ex.deadline,new:dl});
@@ -1402,6 +1405,7 @@ function importRows(rows){
   });
   const parts=[];
   if(added)parts.push(added+' nieuw');
+  if(revived)parts.push(revived+' teruggehaald');
   if(dlChanges.length)parts.push(dlChanges.length+' deadline gewijzigd');
   if(removed)parts.push(removed+' verwijderd uit wachtrij');
   if(!parts.length)parts.push('Geen wijzigingen');
