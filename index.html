@@ -519,6 +519,7 @@ let S = {
 // ════════════════════════════════════════
 function save(){
   if(window.__readonly) return;
+  if(typeof _trackUndo==='function') _trackUndo();
   try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}
   if(typeof cloudSave==='function') cloudSave();
 }
@@ -548,7 +549,7 @@ function load(){
 // HELPERS
 // ════════════════════════════════════════
 const DAYS = ['Zo','Ma','Di','Wo','Do','Vr','Za'];
-const PAL = ['#e57373','#f06292','#ba68c8','#7986cb','#4fc3f7','#4dd0e1','#81c784','#dce775','#ffb74d','#a1887f','#90a4ae','#ff8a65'];
+const PAL = ['#e57373','#ef5350','#f06292','#ec407a','#ba68c8','#ab47bc','#9575cd','#7e57c2','#7986cb','#5c6bc0','#4fc3f7','#29b6f6','#4dd0e1','#26c6da','#66bb6a','#9ccc65','#d4e157','#ffca28','#ffa726','#ff7043','#8d6e63','#78909c'];
 const _kc = {};
 function linkedPartner(j){
   if(!j.groupId)return null;
@@ -679,7 +680,7 @@ function chipHTML(j,pid,di,ji){
   }
   const werfColor=kColor(j.klant);
   div.className='aw '+jtype(j)+(j.blocked?' blocked':'')+(j.groupId?' is-split':'');
-  if(werfColor&&!j.blocked)div.style.borderLeftColor=werfColor;
+  if(werfColor&&!j.blocked){div.style.borderLeft='4px solid '+werfColor;div.style.background=werfColor+'22';}
   div.draggable=!j.blocked;
   div.setAttribute('ondragstart',"ds(event,'"+j.id+"','"+pid+'_'+di+"')");
   div.setAttribute('ondragend','de()');
@@ -2165,6 +2166,42 @@ body.ro .aw{cursor:default!important}
   var stored=null; try{stored=localStorage.getItem('obp8_auth');}catch(e){}
   if(stored==='edit'||stored==='view'){ applyRole(stored); }
   else { buildOverlay(); }
+})();
+
+// ========================================
+// UNDO (Ctrl+Z)
+// ========================================
+var _undoStack=[],_lastSerialized=null;
+function _trackUndo(){
+  if(!_undoStack)return;
+  var snap;
+  try{snap=JSON.stringify({jobs:S.jobs,plan:S.plan,bw:S.bw,cnc:S.cnc,events:S.events,history:S.history,holidays:S.holidays});}catch(e){return;}
+  if(typeof _applyingRemote!=='undefined' && _applyingRemote){_lastSerialized=snap;return;}
+  if(_lastSerialized!==null && _lastSerialized!==snap){ _undoStack.push(_lastSerialized); if(_undoStack.length>60)_undoStack.shift(); }
+  _lastSerialized=snap;
+}
+function doUndo(){
+  if(window.__readonly)return;
+  if(!_undoStack.length){if(typeof toast==='function')toast('Niets om ongedaan te maken');return;}
+  var prev=_undoStack.pop();
+  try{var d=JSON.parse(prev);['jobs','plan','bw','cnc','events','history','holidays'].forEach(function(k){if(d[k]!==undefined)S[k]=d[k];});}catch(e){return;}
+  _lastSerialized=prev;
+  save(); render();
+  if(typeof toast==='function')toast('Ongedaan gemaakt');
+}
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')&&!e.shiftKey){
+    var t=e.target; if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;
+    e.preventDefault(); doUndo();
+  }
+});
+(function(){
+  var us=document.createElement('style'); us.textContent='body.ro #undoBtn{display:none!important}'; document.head.appendChild(us);
+  var nav=document.querySelector('.top-nav');
+  if(nav&&!document.getElementById('undoBtn')){
+    var b=document.createElement('button'); b.id='undoBtn'; b.className='nav-btn'; b.title='Ongedaan maken (Ctrl+Z)'; b.innerHTML='&#8624;'; b.onclick=doUndo;
+    nav.appendChild(b);
+  }
 })();
 </script>
 </body>
