@@ -518,6 +518,7 @@ let S = {
 // PERSIST
 // ════════════════════════════════════════
 function save(){
+  if(window.__readonly) return;
   try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}
   if(typeof cloudSave==='function') cloudSave();
 }
@@ -2061,6 +2062,96 @@ function initCloud(){
   }catch(e){console.warn('Firebase init fout',e);}
 }
 initCloud();
+
+// ========================================
+// LOGIN / TOEGANG (gedeelde wachtwoorden)
+// ========================================
+// Wachtwoorden hier aanpasbaar:
+var ACCESS = { edit: "productie123", view: "lezen123" };
+
+(function(){
+  var st=document.createElement('style');
+  st.textContent = `
+#loginOverlay{position:fixed;inset:0;z-index:99999;background:#111;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif}
+.lg-box{background:#1a1a18;border:1px solid #333;border-radius:12px;padding:32px 28px;width:300px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.lg-logo{font-size:12px;font-weight:800;letter-spacing:.25em;color:#c8a96e;margin-bottom:4px}
+.lg-title{font-size:18px;font-weight:700;color:#e0ddd6;margin-bottom:20px}
+.lg-box input{width:100%;padding:10px 12px;border:1px solid #444;border-radius:7px;background:#111;color:#e0ddd6;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box}
+.lg-box input:focus{border-color:#c8a96e}
+.lg-err{color:#f87171;font-size:12px;margin-top:8px;display:none}
+.lg-btn{margin-top:14px;width:100%;padding:10px;border:none;border-radius:7px;background:#c8a96e;color:#111;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit}
+.lg-btn:hover{background:#d8bd87}
+.ro-badge{background:rgba(200,169,110,.15);border:.5px solid #c8a96e;color:#c8a96e;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.logout-btn{background:none;border:.5px solid #444;color:#ccc;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-family:inherit;white-space:nowrap}
+.logout-btn:hover{background:#222;border-color:#888;color:#fff}
+body.ro .hrs-btn,body.ro .aw-del,body.ro .sp-hbtn{display:none!important}
+body.ro .aw{cursor:default!important}
+`;
+  document.head.appendChild(st);
+
+  // slepen blokkeren in alleen-lezen
+  document.addEventListener('dragstart', function(e){
+    if(window.__readonly){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  function logout(){ try{localStorage.removeItem('obp8_auth');}catch(e){} location.reload(); }
+
+  function addBar(role){
+    var tr=document.querySelector('.top-r'); if(!tr) return;
+    if(role==='view' && !document.getElementById('roBadge')){
+      var b=document.createElement('span'); b.id='roBadge'; b.className='ro-badge';
+      b.innerHTML='&#128065; Alleen-lezen'; tr.insertBefore(b, tr.firstChild);
+    }
+    if(!document.getElementById('logoutBtn')){
+      var btn=document.createElement('button'); btn.id='logoutBtn'; btn.className='logout-btn';
+      btn.textContent='Afmelden'; btn.onclick=logout; tr.appendChild(btn);
+    }
+  }
+
+  function hideEdit(){
+    document.querySelectorAll('.top-r button, .top-r label').forEach(function(el){
+      var oc=el.getAttribute('onclick')||''; var inner=el.innerHTML||'';
+      if(/openAdd|openPeople|openSett/.test(oc) || /Propos import/.test(inner)) el.style.display='none';
+    });
+  }
+
+  function applyRole(role){
+    window.__readonly = (role==='view');
+    document.body.classList.toggle('ro', window.__readonly);
+    var lo=document.getElementById('loginOverlay'); if(lo) lo.remove();
+    addBar(role);
+    if(window.__readonly) hideEdit();
+    if(typeof render==='function') render();
+  }
+  window._logout = logout;
+
+  function tryLogin(){
+    var v=document.getElementById('loginPw').value;
+    if(v===ACCESS.edit){ try{localStorage.setItem('obp8_auth','edit');}catch(e){} applyRole('edit'); }
+    else if(v===ACCESS.view){ try{localStorage.setItem('obp8_auth','view');}catch(e){} applyRole('view'); }
+    else { document.getElementById('loginErr').style.display='block'; }
+  }
+
+  function buildOverlay(){
+    var ov=document.createElement('div'); ov.id='loginOverlay';
+    ov.innerHTML = '<div class="lg-box">'
+      + '<div class="lg-logo">OBUMEX</div>'
+      + '<div class="lg-title">Werkplanning</div>'
+      + '<input id="loginPw" type="password" placeholder="Wachtwoord" autocomplete="current-password">'
+      + '<div id="loginErr" class="lg-err">Onjuist wachtwoord</div>'
+      + '<button id="loginBtn" class="lg-btn">Aanmelden</button>'
+      + '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('loginBtn').onclick=tryLogin;
+    var pw=document.getElementById('loginPw');
+    pw.addEventListener('keydown', function(e){ if(e.key==='Enter') tryLogin(); });
+    pw.focus();
+  }
+
+  var stored=null; try{stored=localStorage.getItem('obp8_auth');}catch(e){}
+  if(stored==='edit'||stored==='view'){ applyRole(stored); }
+  else { buildOverlay(); }
+})();
 </script>
 </body>
 </html>
