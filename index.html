@@ -1348,6 +1348,17 @@ function importRows(rows){
   const hdr=rows[hi].map(h=>String(h).trim().toLowerCase());
   const col=(...ns)=>{for(const n of ns){const i=hdr.findIndex(h=>h.includes(n.toLowerCase()));if(i>=0)return i;}return -1;};
   const iNr=col('ponr'),iDesc=col('omschrijving'),iKlant=col('klant'),iCel=col('nu in cel'),iDl=col('geplande einddatum');
+  const _crit=[];
+  if(iNr<0)_crit.push('ponr (ordernummer)');
+  if(iCel<0)_crit.push('nu in cel (bewerking)');
+  if(_crit.length){
+    alert('Import kon niet worden uitgevoerd.\n\nVerplichte kolom(men) niet gevonden:\n\u2022 '+_crit.join('\n\u2022 ')+'\n\nGevonden kolommen:\n'+hdr.join(', ')+'\n\nControleer of je de juiste Propos-export hebt gekozen.');
+    toast('Import gestopt: kolom ontbreekt');
+    return;
+  }
+  const _optMiss=[];
+  if(iDesc<0)_optMiss.push('omschrijving');
+  if(iDl<0)_optMiss.push('geplande einddatum');
 
   // Bouw set van alle nrs in de nieuwe export
   const importNrs=new Set();
@@ -1408,6 +1419,7 @@ function importRows(rows){
   if(revived)parts.push(revived+' teruggehaald');
   if(dlChanges.length)parts.push(dlChanges.length+' deadline gewijzigd');
   if(removed)parts.push(removed+' verwijderd uit wachtrij');
+  if(_optMiss.length)parts.push('kolom niet gevonden: '+_optMiss.join('/'));
   if(!parts.length)parts.push('Geen wijzigingen');
   render();
 
@@ -2006,15 +2018,13 @@ document.addEventListener('keydown',e=>{
 // ── AUTO-BACKUP elke 30 minuten ──────────────────────────────────
 setInterval(()=>{
   try{
-    const data=JSON.stringify(S);
-    const blob=new Blob([data],{type:'application/json'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;
-    a.download='obumex_backup_'+new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')+'.json';
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('Backup opgeslagen');
-  }catch(e){console.warn('Backup failed',e);}
+    if(window.__readonly) return;
+    if(typeof firebase==='undefined' || !firebase.apps || !firebase.apps.length) return;
+    var payload={_backupAt:new Date().toISOString(),_ts:Date.now()};
+    CLOUD_KEYS.forEach(function(k){payload[k]=S[k];});
+    var slot=Math.floor(Date.now()/(30*60*1000))%6; // 6 roterende back-ups, stil
+    firebase.firestore().collection('planning').doc('autobackup_'+slot).set(payload).catch(function(e){console.warn('Auto-backup mislukt',e);});
+  }catch(e){console.warn('Auto-backup fout',e);}
 },30*60*1000);
 
 // normalize cel values
