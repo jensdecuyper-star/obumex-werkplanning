@@ -465,6 +465,7 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 <div class="modal">
   <div class="mh" id="ev-title">Dag-event <button class="mx" onclick="closeEventModal()">×</button></div>
   <div class="info" id="ev-info"></div>
+  <div class="fg"><label>Tot en met (optioneel — voor een hele periode)</label><input type="date" id="ev-until"></div>
   <div class="fg">
     <label>Type</label>
     <div style="display:flex;gap:6px">
@@ -595,6 +596,8 @@ function personHrs(pid,di){
   const dow=dates[di].getDay();
   if(!S.workDays.includes(dow))return 0;
   if(isHoliday(di))return 0;  // feestdag = geen capaciteit
+  const _eds=dates[di].toISOString().slice(0,10);
+  if(S.events&&S.events[pid+'_'+_eds])return 0;  // ziek/afwezig/machine stuk → geen capaciteit
   const p=allPeople().find(x=>x.id===pid);
   if(p&&p.offDays&&p.offDays.includes(dow))return 0;
   return p?p.hrs:S.dayHrs;
@@ -1755,7 +1758,8 @@ function showCellCtx(e,pid,di){
   if(ev){
     h+=`<div style="padding:6px 12px;font-size:11px;background:var(--amb-l);color:var(--amb)">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`;
     h+=`<div class="ctx-sep"></div>`;
-    h+=`<button class="ctx-item" onclick="clearEvent('${pid}',${di})">✓ Event verwijderen</button>`;
+    h+=`<button class="ctx-item" onclick="clearEvent('${pid}',${di})">✓ Deze dag vrijgeven</button>`;
+    h+=`<button class="ctx-item" onclick="clearEventForward('${pid}',${di})">✓ Afwezigheid wissen (deze + volgende dagen)</button>`;
   } else {
     h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${di},'sick')">🤒 Ziek melden</button>`;
     h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${di},'breakdown')">🔧 Machine stuk</button>`;
@@ -1793,6 +1797,7 @@ function openEventForDay(pid, di, type='sick'){
   });
   document.getElementById('ev-note-fg').style.display=type==='other'?'':'none';
   document.getElementById('ev-note').value='';
+  var _eu=document.getElementById('ev-until'); if(_eu){ _eu.value=''; _eu.min=d.toISOString().slice(0,10); }
   document.getElementById('eventModal').classList.remove('hidden');
 }
 
@@ -1809,42 +1814,62 @@ function selEvType(el){
 
 function closeEventModal(){document.getElementById('eventModal').classList.add('hidden');}
 
+function planKeyForDate(pid, dateObj){
+  const dow=dateObj.getDay(); const di=dow===0?6:dow-1;
+  const monday=new Date(dateObj); monday.setHours(0,0,0,0); monday.setDate(dateObj.getDate()-di);
+  const cm=new Date(wdates(0)[0]); cm.setHours(0,0,0,0);
+  const wo=Math.round((monday-cm)/(7*86400000));
+  return wo+'_'+pid+'_'+di;
+}
 function confirmEvent(){
   if(_ctxPid===null||_ctxDi===null) return;
   const dates=wdates(S.wo);
-  const ds=dates[_ctxDi].toISOString().slice(0,10);
+  const start=new Date(dates[_ctxDi]); start.setHours(0,0,0,0);
   const note=document.getElementById('ev-note').value.trim();
-  S.events[_ctxPid+'_'+ds]={type:_evType,note};
-
-  // Orders doorschuiven naar volgende werkdag
-  const k=pkey(_ctxPid,_ctxDi);
-  const orders=S.plan[k]||[];
-  if(orders.length>0){
-    // Zoek volgende werkdag (ook over weekgrens)
-    let nextDi=_ctxDi+1;
-    while(nextDi<7 && !S.workDays.includes(dates[nextDi].getDay())) nextDi++;
-    if(nextDi<7){
-      const kn=pkey(_ctxPid,nextDi);
-      if(!S.plan[kn]) S.plan[kn]=[];
-      S.plan[kn]=[...orders,...S.plan[kn]];
-    } else {
-      // volgende week
-      const nextWo=S.wo+1;
-      const nextDates=wdates(nextWo);
-      let nwDi=0;
-      while(nwDi<7&&!S.workDays.includes(nextDates[nwDi].getDay()))nwDi++;
-      const kn=`${nextWo}_${_ctxPid}_${nwDi}`;
-      if(!S.plan[kn]) S.plan[kn]=[];
-      S.plan[kn]=[...orders,...S.plan[kn]];
-    }
-    S.plan[k]=[];
-    const p=allPeople().find(x=>x.id===_ctxPid);
-    toast(`${_evType==='sick'?'🤒 Ziek':'🔧 Machine stuk'} — ${orders.length} orders doorgeschoven`);
-  } else {
-    toast(`Event geregistreerd`);
+  const untilVal=(document.getElementById('ev-until')||{}).value||'';
+  let end=new Date(start);
+  if(untilVal){ const u=new Date(untilVal+'T00:00:00'); if(!isNaN(u.getTime()) && u>=start) end=u; }
+  const ev={type:_evType,note};
+  const pid=_ctxPid;
+  const absent=[];
+  let d=new Date(start), guard=0;
+  while(d<=end && guard++<400){
+    const dow=d.getDay(); const ds=d.toISOString().slice(0,10);
+    if(S.workDays.includes(dow) && !S.holidays[ds]){ S.events[pid+'_'+ds]=ev; absent.push(new Date(d)); }
+    d.setDate(d.getDate()+1);
   }
+  // Orders van afwezige dagen doorschuiven naar eerste vrije werkdag na de periode
+  let bumped=[];
+  absent.forEach(function(dt){ const pk=planKeyForDate(pid,dt); if(S.plan[pk]&&S.plan[pk].length){ bumped=bumped.concat(S.plan[pk]); S.plan[pk]=[]; } });
+  if(bumped.length){
+    let t=new Date(end), g2=0;
+    while(g2++<200){
+      t.setDate(t.getDate()+1);
+      const dow=t.getDay(); const ds=t.toISOString().slice(0,10);
+      if(S.workDays.includes(dow) && !S.holidays[ds] && !S.events[pid+'_'+ds]){
+        const pk=planKeyForDate(pid,t); if(!S.plan[pk])S.plan[pk]=[]; S.plan[pk]=[...bumped,...S.plan[pk]]; break;
+      }
+    }
+  }
+  const dagen=absent.length;
   closeEventModal();
   render();
+  toast((_evType==='sick'?'🤒 Ziek':_evType==='breakdown'?'🔧 Machine stuk':'⚠️ Afwezig')+(dagen>1?` — ${dagen} dagen`:'')+(bumped.length?` · ${bumped.length} orders doorgeschoven`:''));
+}
+function clearEventForward(pid,di){
+  closeCtx();
+  let d=new Date(wdates(S.wo)[di]); d.setHours(0,0,0,0);
+  let cleared=0, guard=0;
+  while(guard++<200){
+    const ds=d.toISOString().slice(0,10); const dow=d.getDay();
+    if(S.workDays.includes(dow) && !S.holidays[ds]){
+      if(S.events[pid+'_'+ds]){ delete S.events[pid+'_'+ds]; cleared++; }
+      else break;
+    }
+    d.setDate(d.getDate()+1);
+  }
+  render();
+  toast('Afwezigheid gewist'+(cleared>1?` (${cleared} dagen)`:''));
 }
 
 // ── CHIP CONTEXT MENU ──────────────────────────────────────────
