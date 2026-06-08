@@ -2044,7 +2044,7 @@ function cloudSave(){
     var o={_ts:Date.now()};
     CLOUD_KEYS.forEach(function(k){o[k]=S[k];});
     _lastAppliedTs=o._ts;
-    _docRef.set(o,{merge:true}).then(function(){_pendingWrite=false;})
+    _docRef.set(o).then(function(){_pendingWrite=false;})
       .catch(function(e){_pendingWrite=false;console.warn('Cloud opslaan mislukt',e);});
   },500);
 }
