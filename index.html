@@ -2042,9 +2042,9 @@ render();
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
 var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays'];
-var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0;
+var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false;
 function cloudSave(){
-  if(!_docRef||_applyingRemote)return;
+  if(!_docRef||_applyingRemote||!_cloudReady)return;
   _pendingWrite=true;
   clearTimeout(_cloudTimer);
   _cloudTimer=setTimeout(function(){
@@ -2073,13 +2073,12 @@ function initCloud(){
     var db=firebase.firestore();
     _docRef=db.collection('planning').doc('gedeeld');
     _docRef.onSnapshot(function(snap){
-      if(!snap.exists){cloudSave();return;}
+      if(!snap.exists){_cloudReady=true;cloudSave();return;}
       if(snap.metadata.hasPendingWrites)return;
-      if(_pendingWrite)return;
+      if(_pendingWrite){_cloudReady=true;return;}
       var d=snap.data();
-      if(!d._ts||d._ts<=_lastAppliedTs)return;
-      _lastAppliedTs=d._ts;
-      applyRemote(d);
+      if(d._ts&&d._ts>_lastAppliedTs){_lastAppliedTs=d._ts;applyRemote(d);}
+      _cloudReady=true;
     },function(err){console.warn('Cloud sync fout',err);});
   }catch(e){console.warn('Firebase init fout',e);}
 }
