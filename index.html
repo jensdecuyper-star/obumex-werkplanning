@@ -2270,21 +2270,32 @@ function moveToWeek(jid,pid,di,delta){
   if(typeof toast==='function') toast(delta>0?'→ Volgende week':'← Vorige week');
 }
 
-// ── Slepen naar de rand → automatisch week vooruit/terug ──
+// ── Slepen naar de rand → week vooruit/terug, alleen bij even (0,5s) blijven hangen ──
 (function(){
-  var _edgeAt=0;
+  var _t=null,_dir=0,_last=0;
+  function clr(){ if(_t){clearTimeout(_t);_t=null;} _dir=0; }
   document.addEventListener('dragover', function(e){
-    if(!document.body.classList.contains('dragging')) return;
-    var gw=document.querySelector('.grid-wrap'); if(!gw) return;
+    if(!document.body.classList.contains('dragging')){ clr(); return; }
+    var gw=document.querySelector('.grid-wrap'); if(!gw){ clr(); return; }
     var r=gw.getBoundingClientRect();
-    if(e.clientY < r.top || e.clientY > r.bottom) return;
+    if(e.clientY < r.top || e.clientY > r.bottom){ clr(); return; }
     var padR=parseInt(getComputedStyle(gw).paddingRight)||0;
-    var rightEdge=r.right-padR;
-    var edge=48, now=Date.now();
-    if(now-_edgeAt < 850) return;
-    if(e.clientX > r.left && e.clientX < r.left+edge){ _edgeAt=now; if(typeof chWeek==='function')chWeek(-1); if(typeof toast==='function')toast('\u25C0 Vorige week'); }
-    else if(e.clientX < rightEdge && e.clientX > rightEdge-edge){ _edgeAt=now; if(typeof chWeek==='function')chWeek(1); if(typeof toast==='function')toast('Volgende week \u25B6'); }
+    var rightEdge=r.right-padR, edge=40, dir=0;
+    if(e.clientX>r.left && e.clientX<r.left+edge) dir=-1;
+    else if(e.clientX<rightEdge && e.clientX>rightEdge-edge) dir=1;
+    if(dir===0){ clr(); return; }
+    if(dir!==_dir){
+      clr(); _dir=dir;
+      _t=setTimeout(function(){
+        _t=null; _dir=0;
+        var now=Date.now(); if(now-_last<500) return; _last=now;
+        if(typeof chWeek==='function')chWeek(dir);
+        if(typeof toast==='function')toast(dir<0?'\u25C0 Vorige week':'Volgende week \u25B6');
+      }, 500);
+    }
   }, true);
+  document.addEventListener('dragend', clr, true);
+  document.addEventListener('drop', clr, true);
 })();
 </script>
 </body>
