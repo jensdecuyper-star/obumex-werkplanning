@@ -309,6 +309,9 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .aw-blk{margin-top:2px}
 .sp-hinp{font-family:monospace;font-size:11px;font-weight:700;width:34px;text-align:center;color:var(--ink);border:1px solid transparent;border-radius:3px;background:rgba(0,0,0,.05);padding:1px 0}
 .sp-hinp:focus{border-color:var(--gold);background:#fff;outline:none}
+.aw-statusrow{margin:2px 0}
+.aw-status{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;line-height:1.5;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-oroute{font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -332,6 +335,7 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
   </div>
   <div class="top-r">
     <button class="tbtn" onclick="toggleSP()" id="sp-btn">📋 Wachtrij <span class="badge-cnt hidden" id="sp-cnt">0</span></button>
+    <button class="tbtn" onclick="openHold()" id="hold-btn">⏸ On hold <span class="badge-cnt hidden" id="hold-cnt">0</span></button>
     <label class="tbtn accent" style="cursor:pointer">↑ Propos import
       <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImport(event)">
     </label>
@@ -613,6 +617,7 @@ function render(){
   renderCap(dates);
   renderGrid(dates);
   renderSPBadge();
+  if(typeof updateHoldBadge==='function')updateHoldBadge();
   if(_spOpen) renderSP();
   save();
   if(_planSearchTerm) setTimeout(applyPlanSearch,50);
@@ -709,7 +714,7 @@ function chipHTML(j,pid,di,ji){
   const hrsPlus='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',0.5,\''+pid+'\','+di+')">+</button>';
   const delBtn='<span class="aw-del" onclick="event.stopPropagation();rmPlan(\''+pid+'\','+di+',\''+j.id+'\')" title="Terug naar wachtrij">&#215;</span>';
   const klantPill=j.klant?('<span class="aw-kpill" style="border-color:'+werfColor+'"><span class="klant-dot" style="background:'+werfColor+'"></span>'+j.klant+'</span>'):'';
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-code">'+fmtNr(j.nr)+splitLnk+'</span>'+delBtn+'</div><div class="aw-desc">'+cleanDesc(j.nr,j.desc)+'</div>'+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+klantPill+'<span class="aw-hrs">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</span></div></div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-code">'+fmtNr(j.nr)+splitLnk+'</span>'+delBtn+'</div><div class="aw-desc">'+cleanDesc(j.nr,j.desc)+'</div>'+(j.status?('<div class="aw-statusrow">'+statusBadge(j.status)+'</div>'):'')+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+klantPill+'<span class="aw-hrs">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</span></div></div>';
   return div.outerHTML;
 }
 
@@ -1119,6 +1124,8 @@ function renderSP(){
         <div class="sp-oinfo">
           <div class="sp-onr">${fmtNr(j.nr)}</div>
           <div class="sp-odesc">${cleanDesc(j.nr,j.desc)}</div>
+          ${j.status?`<div style="margin:2px 0">${statusBadge(j.status)}</div>`:''}
+          ${j.route?`<div class="sp-oroute" title="${escapeHtml(j.route)}">\u{1F500} ${escapeHtml(j.route)}</div>`:''}
           ${j.klant?`<div class="sp-oklant"><span class="klant-dot" style="background:${kc}"></span>${j.klant}</div>`:''}
           <div class="sp-ometa">
             <span class="sp-opill ${blk?'blk':t}">${blk?'⚠ Geblokkeerd':j.cel}</span>
@@ -1132,6 +1139,7 @@ function renderSP(){
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+          <button onclick="event.stopPropagation();openDetail('${j.id}')" style="font-size:9px;padding:3px 8px;border:.5px solid var(--line);border-radius:4px;background:#fff;color:var(--t2);cursor:pointer">\u2139 Details</button>
           ${blk
             ?`<button onclick="event.stopPropagation();openUnblock('${j.id}')" style="font-size:9px;padding:3px 8px;border:.5px solid #fcd34d;border-radius:4px;background:#fef3c7;color:#92400e;cursor:pointer;white-space:nowrap">✓ Vrijgeven</button>`
             :`<button onclick="event.stopPropagation();openBlock('${j.id}')" style="font-size:9px;padding:3px 8px;border:.5px solid var(--line);border-radius:4px;background:#fff;color:var(--t2);cursor:pointer">⚠ Blokkeer</button>`
@@ -1372,6 +1380,9 @@ function importRows(rows){
   const hdr=rows[hi].map(h=>String(h).trim().toLowerCase());
   const col=(...ns)=>{for(const n of ns){const i=hdr.findIndex(h=>h.includes(n.toLowerCase()));if(i>=0)return i;}return -1;};
   const iNr=col('ponr'),iDesc=col('omschrijving'),iKlant=col('klant'),iCel=col('nu in cel'),iDl=col('geplande einddatum');
+  const iHrs=col('normuren','norm uren','geschatte uren','bewerkingstijd','geschat','duur');
+  const iStatus=col('status','voortgang','gereed');
+  const iRoute=col('route','bewerkingen','routing','stappen','bewerking volgorde');
   const _crit=[];
   if(iNr<0)_crit.push('ponr (ordernummer)');
   if(iCel<0)_crit.push('nu in cel (bewerking)');
@@ -1419,6 +1430,10 @@ function importRows(rows){
     const klant=String(row[iKlant]||'').trim();
     const celRaw=String(row[iCel]||'').trim();
     const dl=String(row[iDl]||'').trim();
+    const _nh=iHrs>=0?parseFloat(String(row[iHrs]||'').replace(',','.')):NaN;
+    const _normH=(!isNaN(_nh)&&_nh>0)?Math.max(0.5,Math.round(_nh*2)/2):null;
+    const status=iStatus>=0?String(row[iStatus]||'').trim():'';
+    const route=iRoute>=0?String(row[iRoute]||'').trim():'';
     if(!nr&&!desc)return;
     const cu=celRaw.toUpperCase();
     const cel=cu==='CNC'?'CNC':cu==='BANKWERK'?'Bankwerk':null;
@@ -1427,6 +1442,7 @@ function importRows(rows){
       const ex=existing.get(nr);
       if(ex.done){ex.done=false;revived++;}
       if(desc)ex.desc=desc; if(klant)ex.klant=klant; ex.cel=cel;
+      if(status)ex.status=status; if(route)ex.route=route; if(_normH)ex.estHrs=_normH;
       // Deadline bijwerken indien gewijzigd
       if(dl&&ex.deadline!==dl){
         dlChanges.push({nr:ex.nr,desc:ex.desc,old:ex.deadline,new:dl});
@@ -1434,7 +1450,7 @@ function importRows(rows){
       } else skip++;
     } else {
       // Echt nieuw → toevoegen
-      S.jobs.push({id:'imp'+Date.now()+Math.random().toString(36).slice(2),nr,desc,klant,cel,hrs:4,deadline:dl,blocked:false,blockedReason:'',blockedUntil:''});
+      S.jobs.push({id:'imp'+Date.now()+Math.random().toString(36).slice(2),nr,desc,klant,cel,hrs:_normH||4,estHrs:_normH,status:status,route:route,deadline:dl,blocked:false,blockedReason:'',blockedUntil:''});
       added++;
     }
   });
@@ -1881,6 +1897,7 @@ function showChipCtx(e,jid,pid,di){
   const menu=document.getElementById('ctxMenu');
   let h=`<div class="ctx-head">${j.desc.slice(0,30)}</div>`;
   h+=`<button class="ctx-item" onclick="closeCtx();markDone('${jid}','${pid}',${di})">✓ Afgerond</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();openDetail('${jid}')">\u2139 Details</button>`;
   h+=`<div class="ctx-sep"></div>`;
   if(j.blocked){
     h+=`<button class="ctx-item" onclick="closeCtx();openUnblock('${jid}')">✓ Vrijgeven</button>`;
@@ -2343,6 +2360,49 @@ function moveToWeek(jid,pid,di,delta){
   document.addEventListener('dragend', function(){ clr(); remove(); }, true);
   document.addEventListener('drop', function(){ clr(); remove(); }, true);
 })();
+
+// ── Status / route / details / on-hold ──
+function escapeHtml(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function statusMeta(st){var s=(st||'').toLowerCase();
+  if(/klaar|gereed|done|afgew|voltooi/.test(s))return{c:'var(--grn)',b:'var(--grn-l)',bd:'#bbf7d0'};
+  if(/bezig|lopen|uitvoer|started|actief|productie/.test(s))return{c:'var(--amb)',b:'var(--amb-l)',bd:'#fcd34d'};
+  if(/wacht|hold|geblok|block|stop|pauze/.test(s))return{c:'var(--red)',b:'var(--red-l)',bd:'#fca5a5'};
+  return{c:'var(--t2)',b:'var(--surf2)',bd:'var(--line)'};}
+function statusBadge(st){if(!st)return '';var m=statusMeta(st);return '<span class="aw-status" style="background:'+m.b+';color:'+m.c+';border:.5px solid '+m.bd+'">'+escapeHtml(st)+'</span>';}
+function openDetail(jid){
+  if(typeof closeCtx==='function')closeCtx();
+  var j=S.jobs.find(function(x){return x.id===jid;}); if(!j)return;
+  var rows=[['Order',fmtNr(j.nr)],['Omschrijving',escapeHtml(j.desc||'')],['Klant',escapeHtml(j.klant||'\u2013')],['Cel',escapeHtml(j.cel||'\u2013')],['Normuren',j.estHrs?(j.estHrs+'u'):'\u2013'],['Ingestelde uren',(j.hrs||0)+'u'],['Status',j.status?statusBadge(j.status):'\u2013'],['Route',j.route?escapeHtml(j.route):'\u2013'],['Deadline',escapeHtml(j.deadline||'\u2013')]];
+  if(j.blocked)rows.push(['On hold','\u26A0 '+escapeHtml(j.blockedReason||'')+(j.blockedUntil?(' (vrij '+escapeHtml(j.blockedUntil)+')'):'')]);
+  var h='<div class="modal"><div class="mh">Orderdetails <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">&#215;</button></div>';
+  h+='<table style="width:100%;font-size:12px;border-collapse:collapse">';
+  rows.forEach(function(r){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:6px 8px;color:var(--t2);white-space:nowrap;vertical-align:top">'+r[0]+'</td><td style="padding:6px 8px;font-weight:600">'+r[1]+'</td></tr>';});
+  h+='</table><div class="mact" style="margin-top:10px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div></div>';
+  var ov=document.createElement('div');ov.className='ov';ov.style.zIndex='720';ov.innerHTML=h;
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
+function holdList(){return S.jobs.filter(function(j){return !j.done && (j.blocked || /wacht|hold|geblok|block/i.test(j.status||''));});}
+function updateHoldBadge(){var n=holdList().length;var b=document.getElementById('hold-cnt');if(b){b.textContent=n;b.classList.toggle('hidden',n===0);}}
+function _holdLoc(j){var planned=null;Object.keys(S.plan||{}).forEach(function(k){if((S.plan[k]||[]).indexOf(j.id)>=0)planned=k;});if(!planned)return 'Wachtrij';var parts=planned.split('_');var pid=parts.slice(1,-1).join('_');var p=allPeople().find(function(x){return x.id===pid;});return p?p.name:'?';}
+function openHold(){
+  var list=holdList();
+  var h='<div class="modal wide" style="max-height:80vh;display:flex;flex-direction:column"><div class="mh">\u23F8 On hold ('+list.length+') <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">&#215;</button></div>';
+  if(!list.length){h+='<div style="padding:24px;text-align:center;color:var(--t3)">Geen orders on hold</div>';}
+  else{
+    h+='<div style="flex:1;overflow:auto;border:.5px solid var(--line);border-radius:7px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surf2)"><th style="text-align:left;padding:6px 10px">Order</th><th style="text-align:left;padding:6px 10px">Klant</th><th style="text-align:left;padding:6px 10px">Reden</th><th style="text-align:left;padding:6px 10px">Plek</th><th></th></tr></thead><tbody>';
+    list.forEach(function(j){
+      var reason=j.blocked?(j.blockedReason||'\u2013'):(j.status||'\u2013');
+      var until=j.blockedUntil?(' \u00B7 vrij '+escapeHtml(j.blockedUntil)):'';
+      h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:6px 10px"><div style="font-weight:600">'+escapeHtml(j.desc||'')+'</div><div style="font-size:9px;color:var(--t3);font-family:monospace">'+fmtNr(j.nr)+'</div></td><td style="padding:6px 10px">'+escapeHtml(j.klant||'\u2013')+'</td><td style="padding:6px 10px;color:var(--amb)">\u26A0 '+escapeHtml(reason)+until+'</td><td style="padding:6px 10px">'+escapeHtml(_holdLoc(j))+'</td><td style="padding:6px 10px;text-align:right">'+(j.blocked?'<button class="mbtn" style="font-size:10px;padding:3px 8px" onclick="this.closest(&#39;.ov&#39;).remove();openUnblock(&#39;'+j.id+'&#39;)">Vrijgeven</button>':'')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  h+='<div class="mact" style="margin-top:10px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div></div>';
+  var ov=document.createElement('div');ov.className='ov';ov.style.zIndex='720';ov.innerHTML=h;
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
 </script>
 </body>
 </html>
