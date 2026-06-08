@@ -2269,6 +2269,23 @@ function moveToWeek(jid,pid,di,delta){
   render();
   if(typeof toast==='function') toast(delta>0?'→ Volgende week':'← Vorige week');
 }
+
+// ── Slepen naar de rand → automatisch week vooruit/terug ──
+(function(){
+  var _edgeAt=0;
+  document.addEventListener('dragover', function(e){
+    if(!document.body.classList.contains('dragging')) return;
+    var gw=document.querySelector('.grid-wrap'); if(!gw) return;
+    var r=gw.getBoundingClientRect();
+    if(e.clientY < r.top || e.clientY > r.bottom) return;
+    var padR=parseInt(getComputedStyle(gw).paddingRight)||0;
+    var rightEdge=r.right-padR;
+    var edge=48, now=Date.now();
+    if(now-_edgeAt < 850) return;
+    if(e.clientX > r.left && e.clientX < r.left+edge){ _edgeAt=now; if(typeof chWeek==='function')chWeek(-1); if(typeof toast==='function')toast('\u25C0 Vorige week'); }
+    else if(e.clientX < rightEdge && e.clientX > rightEdge-edge){ _edgeAt=now; if(typeof chWeek==='function')chWeek(1); if(typeof toast==='function')toast('Volgende week \u25B6'); }
+  }, true);
+})();
 </script>
 </body>
 </html>
