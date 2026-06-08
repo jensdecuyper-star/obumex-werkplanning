@@ -297,8 +297,16 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .hrs-inp{font-family:monospace;font-size:11px;font-weight:700;width:30px;text-align:center;color:var(--ink);border:1px solid transparent;border-radius:3px;background:rgba(255,255,255,.55);padding:1px 0}
 .hrs-inp:focus{border-color:var(--gold);background:#fff;outline:none}
 .hrs-u{font-size:9px;color:var(--t2);margin-left:1px}
-.nr-p{font-size:8px;color:var(--t3)}
-.nr-em{font-size:11px;font-weight:800;color:var(--ink)}
+.nr-code{font-family:monospace;font-size:12px}
+.nr-p{font-weight:600;color:var(--t2)}
+.nr-em{font-weight:800;color:var(--ink)}
+.aw-body{flex:1;min-width:0}
+.aw-top{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.aw-code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aw-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:5px}
+.aw-kpill{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--ink);background:rgba(255,255,255,.65);border:0.5px solid var(--line);border-radius:5px;padding:2px 6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%}
+.aw-hrs{display:flex;align-items:center;gap:3px;flex-shrink:0}
+.aw-blk{margin-top:2px}
 .sp-hinp{font-family:monospace;font-size:11px;font-weight:700;width:34px;text-align:center;color:var(--ink);border:1px solid transparent;border-radius:3px;background:rgba(0,0,0,.05);padding:1px 0}
 .sp-hinp:focus{border-color:var(--gold);background:#fff;outline:none}
 </style>
@@ -697,7 +705,8 @@ function chipHTML(j,pid,di,ji){
   const hrsMin='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',-0.5,\''+pid+'\','+di+')">&#8722;</button>';
   const hrsPlus='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',0.5,\''+pid+'\','+di+')">+</button>';
   const delBtn='<span class="aw-del" onclick="event.stopPropagation();rmPlan(\''+pid+'\','+di+',\''+j.id+'\')" title="Terug naar wachtrij">&#215;</span>';
-  div.innerHTML='<div class="aw-body"><div class="aw-nr">'+fmtNr(j.nr)+splitLnk+'</div><div class="aw-desc">'+cleanDesc(j.nr,j.desc)+'</div>'+klantHtml+'<div class="aw-sub">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+blkHtml+'</div></div>'+delBtn;
+  const klantPill=j.klant?('<span class="aw-kpill" style="border-color:'+werfColor+'"><span class="klant-dot" style="background:'+werfColor+'"></span>'+j.klant+'</span>'):'';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-code">'+fmtNr(j.nr)+splitLnk+'</span>'+delBtn+'</div><div class="aw-desc">'+cleanDesc(j.nr,j.desc)+'</div>'+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+klantPill+'<span class="aw-hrs">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</span></div></div>';
   return div.outerHTML;
 }
 
@@ -924,21 +933,27 @@ function spillOver(pid, startDi){
   for(let di=startDi; di<7; di++){
     const cap = personHrs(pid, di);
     if(cap===0) continue;
-    if(dayUsed(pid, di) <= cap) break;
-    // Zoek volgende werkdag - ook over weekgrens heen
+    const k = pkey(pid, di);
+    const ids = S.plan[k] || [];
+    if(ids.length===0) continue;
+    // Eerste order blijft altijd staan (mag groter zijn dan een dag); volgende blijven zolang ze passen.
+    let cum=0, keep=0;
+    for(let i=0;i<ids.length;i++){
+      const jj=S.jobs.find(x=>x.id===ids[i]); const h=(jj&&jj.hrs)||4;
+      if(i===0){ cum=h; keep=1; continue; }
+      if(cum+h<=cap){ cum+=h; keep++; } else break;
+    }
+    if(keep>=ids.length) continue;            // alles past, niets te verschuiven
+    const overflow = ids.slice(keep);
+    S.plan[k] = ids.slice(0, keep);
     const dates = wdates(S.wo);
     let nextDi = di+1;
     while(nextDi<7 && !S.workDays.includes(dates[nextDi].getDay())) nextDi++;
-    const k = pkey(pid, di);
     if(nextDi < 7){
-      // Binnen dezelfde week
       const kn = pkey(pid, nextDi);
       if(!S.plan[kn]) S.plan[kn] = [];
-      while(dayUsed(pid,di) > cap && S.plan[k]?.length > 0){
-        S.plan[kn].unshift(S.plan[k].pop());
-      }
+      S.plan[kn] = [...overflow, ...S.plan[kn]];   // duw door naar de dag erachter
     } else {
-      // Vrijdag (of laatste werkdag) overloopt → volgende week maandag (weekOffset+1, di=0)
       const nextWo = S.wo + 1;
       const nextDates = wdates(nextWo);
       let nextWkDi = 0;
@@ -946,10 +961,8 @@ function spillOver(pid, startDi){
       if(nextWkDi < 7){
         const kn = `${nextWo}_${pid}_${nextWkDi}`;
         if(!S.plan[kn]) S.plan[kn] = [];
-        while(dayUsed(pid,di) > cap && S.plan[k]?.length > 0){
-          S.plan[kn].unshift(S.plan[k].pop());
-        }
-        toast('📅 Overflow → volgende week verschoven');
+        S.plan[kn] = [...overflow, ...S.plan[kn]];
+        toast('Volgende orders naar volgende week (deze week vol)');
       }
       break;
     }
@@ -1849,6 +1862,9 @@ function showChipCtx(e,jid,pid,di){
   } else {
     h+=`<button class="ctx-item" onclick="closeCtx();openBlock('${jid}')">⚠ Blokkeren</button>`;
   }
+  h+=`<div class="ctx-sep"></div>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();moveToWeek('${jid}','${pid}',${di},-1)">← Vorige week</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();moveToWeek('${jid}','${pid}',${di},1)">→ Volgende week</button>`;
   h+=`<button class="ctx-item" onclick="closeCtx();rmPlan('${pid}',${di},'${jid}')">↩ Terug naar wachtrij</button>`;
   showCtxAt(e,h);
 }
@@ -2213,8 +2229,8 @@ document.addEventListener('keydown',function(e){
 // ── Hulpfuncties: nr-opmaak + typbare uren ──
 function fmtNr(nr){
   var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(R\d+)$/i);
-  if(!m) return nr||'';
-  return '<span class="nr-p">'+m[1]+'-</span><span class="nr-em">'+m[2]+'-'+m[3]+'</span>';
+  if(!m) return '<span class="nr-code">'+(nr||'')+'</span>';
+  return '<span class="nr-code"><span class="nr-p">'+m[1]+'-</span><span class="nr-em">'+m[2]+'-'+m[3]+'</span></span>';
 }
 function cleanDesc(nr,desc){
   desc=desc||'';
@@ -2234,6 +2250,24 @@ function setSpHrsAbs(jid,val){
   var n=parseFloat(String(val).replace(',','.')); if(isNaN(n))return;
   j.hrs=Math.max(0.5,Math.round(n*2)/2);
   save(); if(typeof renderSP==='function')renderSP();
+}
+
+// ── Order naar andere week verplaatsen ──
+function moveToWeek(jid,pid,di,delta){
+  if(window.__readonly)return;
+  const fromK=pkey(pid,di);
+  if(S.plan[fromK]) S.plan[fromK]=S.plan[fromK].filter(function(x){return x!==jid;});
+  const targetWo=S.wo+delta;
+  const tdates=wdates(targetWo);
+  let tdi=di;
+  if(!S.workDays.includes(tdates[tdi].getDay())){ tdi=0; while(tdi<7 && !S.workDays.includes(tdates[tdi].getDay())) tdi++; }
+  const toK=targetWo+'_'+pid+'_'+tdi;
+  if(!S.plan[toK]) S.plan[toK]=[];
+  S.plan[toK].push(jid);
+  S.wo=targetWo;
+  if(typeof spillOver==='function') spillOver(pid,tdi);
+  render();
+  if(typeof toast==='function') toast(delta>0?'→ Volgende week':'← Vorige week');
 }
 </script>
 </body>
