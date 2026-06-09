@@ -339,7 +339,9 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .rdy{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:5px;margin:2px 0;white-space:nowrap}
 .rdy-ok{background:var(--grn-l);color:var(--grn);border:.5px solid #a7e3c0}
 .rdy-wait{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
-.wg-corner{position:sticky;left:0;z-index:21}
+.wg-corner{position:sticky;left:0;z-index:21;display:flex;flex-direction:column;gap:2px}
+.wg-row.wknd-row .wg-daylabel{color:#b0a99c;background:#f3f1ec}
+.wg-cell.wknd{background:repeating-linear-gradient(45deg,#faf8f3,#faf8f3 7px,#f1eee7 7px,#f1eee7 14px)}
 .aw-compact{padding:4px 7px}
 .awc-top{display:flex;align-items:center;gap:5px}
 .rdy-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
@@ -728,7 +730,7 @@ function renderGrid(){
   const todayStr=new Date().toDateString();
   let h=`<div class="wg" style="min-width:${minW}px">`;
   h+=`<div class="wg-head" style="display:grid;grid-template-columns:${cols}">`;
-  h+=`<div class="wg-corner"><button class="past-toggle" onclick="toggleShowPast()">${_showPast?'▾ verberg verleden':'▸ toon verleden'}</button></div>`;
+  h+=`<div class="wg-corner"><button class="past-toggle" onclick="toggleShowPast()">${_showPast?'▾ verberg verleden':'▸ toon verleden'}</button><button class="past-toggle" onclick="toggleShowWeekend()">${_showWeekend?'▾ verberg weekend':'☼ toon weekend'}</button></div>`;
   people.forEach(p=>{
     h+=`<div class="wg-hperson" onclick="openPeopleForPerson('${p.id}')" oncontextmenu="showPersonCtx(event,'${p.id}')" title="${p.name}"><div class="wg-pname">${p.name}</div>${p.role?`<div class="wg-prole">${p.role}</div>`:''}</div>`;
   });
@@ -736,7 +738,8 @@ function renderGrid(){
   let lastWk=null;
   for(let g=startG;g<=endG;g++){
     const d=gdate(g);
-    if(!S.workDays.includes(d.getDay()))continue;
+    const isWork=S.workDays.includes(d.getDay());
+    if(!isWork && !_showWeekend)continue;
     const ds0=d.toISOString().slice(0,10);
     const isHol=!!S.holidays[ds0];
     const isT=d.toDateString()===todayStr;
@@ -746,8 +749,8 @@ function renderGrid(){
       const wd=wdates(woOf(g));
       h+=`<div class="wg-wkdiv">Week ${wk} · ${fd(wd[0])} – ${fd(wd[6])}</div>`;
     }
-    const dayCls=isHol?'holiday':isT?'today':'';
-    h+=`<div class="wg-row${isT?' today-row':''}"${isT?' id="todayRow"':''} style="display:grid;grid-template-columns:${cols}">`;
+    const dayCls=isHol?'holiday':isT?'today':(!isWork?'wknd':'');
+    h+=`<div class="wg-row${isT?' today-row':''}${!isWork?' wknd-row':''}"${isT?' id="todayRow"':''} style="display:grid;grid-template-columns:${cols}">`;
     h+=`<div class="wg-daylabel ${dayCls}" onclick="toggleHoliday('${ds0}',${g})" title="${isHol?'Feestdag — klik om te verwijderen':'Klik voor feestdag'}" style="cursor:pointer"><span class="dn">${d.getDate()}</span> ${DAYS[d.getDay()]} <span class="dmon">${('0'+(d.getMonth()+1)).slice(-2)}</span>${isHol?' 🎉':''}</div>`;
     people.forEach(p=>{
       const jobs=getPlan(p.id,g);
@@ -757,7 +760,7 @@ function renderGrid(){
       const ev=S.events[`${p.id}_${ds0}`];
       const dow=d.getDay();
       const isPersonOff=(p.offDays||[]).includes(dow)&&S.workDays.includes(dow);
-      h+=`<div class="wg-cell${isPersonOff?' poff':''}${isT?' today-cell':''}${isHol?' holiday-cell':''}" ondragover="dov(event,'bw')" ondragleave="dlv(event)" ondrop="drop(event,'${p.id}',${g},'bw')" oncontextmenu="showCellCtx(event,'${p.id}',${g})" data-type="bw">${ev?`<div class="ev-badge ${ev.type}">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`:''}${jobs.map((j,ji)=>chipHTML(j,p.id,g,ji)).join('')}${used>0?`<div class="cell-load ${lCls}">${used}/${cap}u</div>`:''}</div>`;
+      h+=`<div class="wg-cell${isPersonOff?' poff':''}${isT?' today-cell':''}${isHol?' holiday-cell':''}${!isWork?' wknd':''}" ondragover="dov(event,'bw')" ondragleave="dlv(event)" ondrop="drop(event,'${p.id}',${g},'bw')" oncontextmenu="showCellCtx(event,'${p.id}',${g})" data-type="bw">${ev?`<div class="ev-badge ${ev.type}">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`:''}${jobs.map((j,ji)=>chipHTML(j,p.id,g,ji)).join('')}${used>0?`<div class="cell-load ${lCls}">${used}/${cap}u</div>`:''}</div>`;
     });
     h+=`</div>`;
   }
@@ -1574,6 +1577,8 @@ function applyPlanSearch(){
 
 function chWeek(d){}
 let _showPast=false;
+let _showWeekend=false;
+function toggleShowWeekend(){_showWeekend=!_showWeekend;renderGrid();}
 let _cardMode=(function(){try{return localStorage.getItem('obx_cardmode')||'full';}catch(e){return 'full';}})();
 function toggleCardMode(){_cardMode=_cardMode==='compact'?'full':'compact';try{localStorage.setItem('obx_cardmode',_cardMode);}catch(e){}updateCardModeBtn();renderGrid();}
 function updateCardModeBtn(){var b=document.getElementById('cardModeBtn');if(b)b.textContent=_cardMode==='compact'?'▭ Detail':'▬ Compact';}
