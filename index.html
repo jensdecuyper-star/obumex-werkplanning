@@ -39,6 +39,11 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .logo{font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
 .vsep{width:1px;height:20px;background:#333}
 .top-nav{display:flex;align-items:center;gap:6px}
+.wg-wkdiv{position:sticky;left:0;background:linear-gradient(90deg,#33332f,#43433d);color:#efe9dc;font:700 11px system-ui,-apple-system,sans-serif;padding:5px 12px;letter-spacing:.04em;border-top:1px solid rgba(0,0,0,.25);border-bottom:1px solid rgba(0,0,0,.12);z-index:4}
+.wg-row.today-row .wg-daylabel{box-shadow:inset 3px 0 0 #2e9e5b}
+.wg-daylabel .dmon{color:var(--t3);font-weight:600}
+.past-toggle{background:none;border:none;color:#8a8a82;font:600 10px system-ui,-apple-system,sans-serif;cursor:pointer;padding:2px 4px;text-align:left}
+.past-toggle:hover{color:#fff}
 .nav-btn{background:none;border:.5px solid #444;color:#ccc;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-family:inherit;transition:all .12s}
 .nav-btn:hover{background:#222;border-color:#666}
 .wklbl{font-size:12px;font-weight:600;color:#e0ddd6;min-width:170px;text-align:center}
@@ -344,9 +349,7 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
   <span class="logo">Obumex</span>
   <span class="vsep"></span>
   <div class="top-nav">
-    <button class="nav-btn" onclick="chWeek(-1)">‹</button>
-    <button class="nav-btn" onclick="goToday()">Nu</button>
-    <button class="nav-btn" onclick="chWeek(1)">›</button>
+    <button class="nav-btn" onclick="goToday()">⌖ Vandaag</button>
   </div>
   <span class="wklbl" id="wklbl"></span>
   <div style="position:relative;margin:0 8px">
@@ -608,39 +611,42 @@ function wdates(off=0){
 }
 function fd(d){return`${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}`}
 function wnum(d){const j=new Date(d.getFullYear(),0,1);return Math.ceil(((d-j)/86400000+j.getDay()+1)/7)}
-function pkey(pid,di){return`${S.wo}_${pid}_${di}`}
-function getPlan(pid,di){return(S.plan[pkey(pid,di)]||[]).map(id=>S.jobs.find(j=>j.id===id)).filter(Boolean)}
+function woOf(g){return Math.floor(g/7);}
+function diOf(g){return g-woOf(g)*7;}
+function gdate(g){const m=wdates(0)[0];const d=new Date(m);d.setHours(0,0,0,0);d.setDate(m.getDate()+g);return d;}
+function gToday(){const m=wdates(0)[0];m.setHours(0,0,0,0);const t=new Date();t.setHours(0,0,0,0);return Math.round((t-m)/86400000);}
+function pkey(pid,g){return`${woOf(g)}_${pid}_${diOf(g)}`}
+function getPlan(pid,g){return(S.plan[pkey(pid,g)]||[]).map(id=>S.jobs.find(j=>j.id===id)).filter(Boolean)}
 function allAssigned(){return new Set(Object.values(S.plan).flat())}
 function jtype(j){return 'bw';}
 function parseDMY(s){if(!s)return null;const p=s.split('-');if(p.length!==3)return null;return new Date(+p[2],+p[1]-1,+p[0]);}
 function isUrgent(dl){if(!dl)return false;const d=parseDMY(dl);return d&&d<new Date();}
 function allPeople(){return[...S.bw,...S.cnc]}
-function isHoliday(di){
-  const ds=wdates(S.wo)[di].toISOString().slice(0,10);
+function isHoliday(g){
+  const ds=gdate(g).toISOString().slice(0,10);
   return !!S.holidays[ds];
 }
-function personHrs(pid,di){
-  const dates=wdates(S.wo);
-  const dow=dates[di].getDay();
+function personHrs(pid,g){
+  const d=gdate(g);
+  const dow=d.getDay();
   if(!S.workDays.includes(dow))return 0;
-  if(isHoliday(di))return 0;  // feestdag = geen capaciteit
-  const _eds=dates[di].toISOString().slice(0,10);
-  if(S.events&&S.events[pid+'_'+_eds])return 0;  // ziek/afwezig/machine stuk → geen capaciteit
+  if(isHoliday(g))return 0;
+  const _eds=d.toISOString().slice(0,10);
+  if(S.events&&S.events[pid+'_'+_eds])return 0;
   const p=allPeople().find(x=>x.id===pid);
   if(p&&p.offDays&&p.offDays.includes(dow))return 0;
   return p?p.hrs:S.dayHrs;
 }
-function dayUsed(pid,di){return getPlan(pid,di).reduce((s,j)=>s+(j.hrs||4),0)}
+function dayUsed(pid,g){return getPlan(pid,g).reduce((s,j)=>s+(j.hrs||4),0)}
 
 // ════════════════════════════════════════
 // RENDER
 // ════════════════════════════════════════
 function render(){
   if(typeof migrateToFase==='function') migrateToFase();
-  const dates=wdates(S.wo);
-  document.getElementById('wklbl').textContent=`W${wnum(dates[0])} · ${fd(dates[0])} – ${fd(dates[6])}`;
-  renderCap(dates);
-  renderGrid(dates);
+  S.wo=0;
+  renderCap();
+  renderGrid();
   renderSPBadge();
   if(typeof updateHoldBadge==='function')updateHoldBadge();
   if(_spOpen) renderSP();
@@ -648,69 +654,75 @@ function render(){
   if(_planSearchTerm) setTimeout(applyPlanSearch,50);
 }
 
-function renderCap(dates){
+function renderCap(){
   const people=S.bw;
+  const start=gToday();
   let h='';
   people.forEach(p=>{
-    let cap=0,used=0;
-    dates.forEach((d,di)=>{ cap+=personHrs(p.id,di); used+=dayUsed(p.id,di); });
+    let cap=0,used=0,g=start,n=0;
+    for(let guard=0;guard<60 && n<10;guard++,g++){
+      const c=personHrs(p.id,g);
+      if(c<=0)continue;
+      cap+=c; used+=dayUsed(p.id,g); n++;
+    }
     const pct=cap>0?Math.min(100,Math.round(used/cap*100)):0;
     const cls=pct>=100?'over':pct>=80?'warn':'ok';
-    h+=`<div class="cap-day"><div class="cap-lbl" title="${p.name}">${p.name}</div>${cap>0?`<div class="cap-track"><div class="cap-fill ${cls}" style="width:${pct}%"></div></div><div class="cap-nums">${used}/${cap}u</div>`:'<div style="font-size:8px;color:var(--t3)">—</div>'}</div>`;
+    h+=`<div class="cap-day" title="${p.name} — komende 10 werkdagen"><div class="cap-lbl" title="${p.name}">${p.name}</div>${cap>0?`<div class="cap-track"><div class="cap-fill ${cls}" style="width:${pct}%"></div></div><div class="cap-nums">${used}/${cap}u</div>`:'<div style="font-size:8px;color:var(--t3)">—</div>'}</div>`;
   });
   document.getElementById('capBar').innerHTML=h;
 }
 
-function renderGrid(dates){
-  const today=new Date().toDateString();
+function renderGrid(){
   const people=S.bw;
-  const lcol='minmax(118px,130px)';
+  const lcol='minmax(118px,138px)';
   const pcols=`repeat(${Math.max(1,people.length)},minmax(150px,1fr))`;
   const cols=`${lcol} ${pcols}`;
-  const minW=130+people.length*150;
+  const minW=138+people.length*150;
+  const todayG=gToday();
+  const startG=_showPast?todayG-10:todayG;
+  const endG=todayG+70;
+  const todayStr=new Date().toDateString();
   let h=`<div class="wg" style="min-width:${minW}px">`;
-  // kop: bankwerkers als kolommen
   h+=`<div class="wg-head" style="display:grid;grid-template-columns:${cols}">`;
-  h+=`<div class="wg-corner">Dag</div>`;
+  h+=`<div class="wg-corner"><button class="past-toggle" onclick="toggleShowPast()">${_showPast?'▾ verberg verleden':'▸ toon verleden'}</button></div>`;
   people.forEach(p=>{
-    h+=`<div class="wg-hperson" onclick="openPeopleForPerson('${p.id}')" oncontextmenu="showPersonCtx(event,'${p.id}')" title="${p.name}">
-      <div class="wg-pname">${p.name}</div>${p.role?`<div class="wg-prole">${p.role}</div>`:''}
-    </div>`;
+    h+=`<div class="wg-hperson" onclick="openPeopleForPerson('${p.id}')" oncontextmenu="showPersonCtx(event,'${p.id}')" title="${p.name}"><div class="wg-pname">${p.name}</div>${p.role?`<div class="wg-prole">${p.role}</div>`:''}</div>`;
   });
   h+=`</div>`;
-  // elke dag = een rij
-  dates.forEach((d,di)=>{
-    const iw=S.workDays.includes(d.getDay());
+  let lastWk=null;
+  for(let g=startG;g<=endG;g++){
+    const d=gdate(g);
+    if(!S.workDays.includes(d.getDay()))continue;
     const ds0=d.toISOString().slice(0,10);
     const isHol=!!S.holidays[ds0];
-    const isT=d.toDateString()===today;
-    const dayCls=isHol?'holiday':isT?'today':!iw?'wknd':'';
-    h+=`<div class="wg-row" style="display:grid;grid-template-columns:${cols}">`;
-    h+=`<div class="wg-daylabel ${dayCls}" onclick="toggleHoliday('${ds0}',${di})" title="${isHol?'Feestdag — klik om te verwijderen':'Klik voor feestdag'}" style="cursor:pointer">
-      <span class="dn">${d.getDate()}</span> ${DAYS[d.getDay()]}${isHol?' 🎉':''}
-    </div>`;
+    const isT=d.toDateString()===todayStr;
+    const wk=wnum(d);
+    if(wk!==lastWk){
+      lastWk=wk;
+      const wd=wdates(woOf(g));
+      h+=`<div class="wg-wkdiv">Week ${wk} · ${fd(wd[0])} – ${fd(wd[6])}</div>`;
+    }
+    const dayCls=isHol?'holiday':isT?'today':'';
+    h+=`<div class="wg-row${isT?' today-row':''}"${isT?' id="todayRow"':''} style="display:grid;grid-template-columns:${cols}">`;
+    h+=`<div class="wg-daylabel ${dayCls}" onclick="toggleHoliday('${ds0}',${g})" title="${isHol?'Feestdag — klik om te verwijderen':'Klik voor feestdag'}" style="cursor:pointer"><span class="dn">${d.getDate()}</span> ${DAYS[d.getDay()]} <span class="dmon">${('0'+(d.getMonth()+1)).slice(-2)}</span>${isHol?' 🎉':''}</div>`;
     people.forEach(p=>{
-      const jobs=getPlan(p.id,di);
-      const used=dayUsed(p.id,di);
-      const cap=personHrs(p.id,di);
+      const jobs=getPlan(p.id,g);
+      const used=dayUsed(p.id,g);
+      const cap=personHrs(p.id,g);
       const lCls=(cap>0&&used>=cap)?'over':(cap>0&&used>=cap*.85)?'full':'';
       const ev=S.events[`${p.id}_${ds0}`];
       const dow=d.getDay();
       const isPersonOff=(p.offDays||[]).includes(dow)&&S.workDays.includes(dow);
-      h+=`<div class="wg-cell${!iw?' wknd':''}${isPersonOff?' poff':''}${isT?' today-cell':''}${isHol?' holiday-cell':''}"
-        ondragover="dov(event,'bw')" ondragleave="dlv(event)" ondrop="drop(event,'${p.id}',${di},'bw')" oncontextmenu="showCellCtx(event,'${p.id}',${di})" data-type="bw">
-        ${ev?`<div class="ev-badge ${ev.type}">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`:''}
-        ${jobs.map((j,ji)=>chipHTML(j,p.id,di,ji)).join('')}
-        ${used>0?`<div class="cell-load ${lCls}">${used}/${cap}u</div>`:''}
-      </div>`;
+      h+=`<div class="wg-cell${isPersonOff?' poff':''}${isT?' today-cell':''}${isHol?' holiday-cell':''}" ondragover="dov(event,'bw')" ondragleave="dlv(event)" ondrop="drop(event,'${p.id}',${g},'bw')" oncontextmenu="showCellCtx(event,'${p.id}',${g})" data-type="bw">${ev?`<div class="ev-badge ${ev.type}">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`:''}${jobs.map((j,ji)=>chipHTML(j,p.id,g,ji)).join('')}${used>0?`<div class="cell-load ${lCls}">${used}/${cap}u</div>`:''}</div>`;
     });
     h+=`</div>`;
-  });
+  }
   h+=`</div>`;
   document.getElementById('planGrid').innerHTML=h;
+  const wl=document.getElementById('wklbl'); if(wl) wl.textContent='';
 }
 
-function chipHTML(j,pid,di,ji){
+function chipHTML(j,pid,g,ji){
   const isOrig=j.groupId===j.id||(!j.splitOf&&j.groupId);
   const splitLnk=j.groupId?(isOrig?'<span class="split-lnk">&#8594; deel 1</span>':'<span class="split-lnk">&#8629; deel 2</span>'):'';
   const klantHtml=j.klant?('<div class="aw-klant"><span class="klant-dot" style="background:'+kColor(j.klant)+';margin-right:3px"></span>'+j.klant+'</div>'):'';
@@ -721,7 +733,7 @@ function chipHTML(j,pid,di,ji){
     div.setAttribute('onclick','');
     div.setAttribute('draggable','false');
     const doneLbl=j.doneDate?' · '+j.doneDate:'';
-    const undoAttr="event.stopPropagation();undoDone('"+j.id+"','"+pid+"',"+di+")";
+    const undoAttr="event.stopPropagation();undoDone('"+j.id+"','"+pid+"',"+g+")";
     div.innerHTML='<div class="aw-body"><div class="aw-desc" style="text-decoration:line-through;opacity:.6">'+j.desc+'</div><div class="aw-sub" style="color:var(--grn);font-weight:700">&#10003; Afgerond'+doneLbl+'</div></div>'
       +'<span class="aw-del" onclick="'+undoAttr+'" title="Ongedaan maken" style="color:var(--t3)">&#8617;</span>';
     return div.outerHTML;
@@ -730,20 +742,20 @@ function chipHTML(j,pid,di,ji){
   div.className='aw '+jtype(j)+(j.blocked?' blocked':'')+(j.groupId?' is-split':'');
   if(werfColor&&!j.blocked){div.style.borderLeft='4px solid '+werfColor;div.style.background=werfColor+'40';}
   div.draggable=!j.blocked;
-  div.setAttribute('ondragstart',"ds(event,'"+j.id+"','"+pid+'_'+di+"')");
+  div.setAttribute('ondragstart',"ds(event,'"+j.id+"','"+pkey(pid,g)+"')");
   div.setAttribute('ondragend','de()');
-  div.setAttribute('ondragover',"awov(event,'"+pid+"',"+di+","+ji+")");
+  div.setAttribute('ondragover',"awov(event,'"+pid+"',"+g+","+ji+")");
   div.setAttribute('ondragleave','awlv(event)');
-  div.setAttribute('oncontextmenu',"showChipCtx(event,'"+j.id+"','"+pid+"',"+di+")");
-  const hrsMin='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',-0.5,\''+pid+'\','+di+')">&#8722;</button>';
-  const hrsPlus='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',0.5,\''+pid+'\','+di+')">+</button>';
-  const delBtn='<span class="aw-del" onclick="event.stopPropagation();rmPlan(\''+pid+'\','+di+',\''+j.id+'\')" title="Terug naar wachtrij">&#215;</span>';
+  div.setAttribute('oncontextmenu',"showChipCtx(event,'"+j.id+"','"+pid+"',"+g+")");
+  const hrsMin='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',-0.5,\''+pid+'\','+g+')">&#8722;</button>';
+  const hrsPlus='<button class="hrs-btn" onclick="event.stopPropagation();changeHrs(\''+j.id+'\',0.5,\''+pid+'\','+g+')">+</button>';
+  const delBtn='<span class="aw-del" onclick="event.stopPropagation();rmPlan(\''+pid+'\','+g+',\''+j.id+'\')" title="Terug naar wachtrij">&#215;</span>';
   const klantPill=j.klant?('<span class="aw-kpill" style="border-color:'+werfColor+'"><span class="klant-dot" style="background:'+werfColor+'"></span>'+j.klant+'</span>'):'';
   const routesHtml=routesChips(j);
   const projTxt=escapeHtml(j.project||j.nr||'');
   const klantLine=j.klant?('<div class="aw-klantline"><span class="klant-dot" style="background:'+werfColor+'"></span>'+escapeHtml(j.klant)+'</div>'):'';
   const faseLine='<div class="aw-fase"><span class="aw-fasenr">'+escapeHtml(j.fase||'')+'</span>'+(j.desc?(' <span class="aw-fasenaam">'+escapeHtml(cleanDesc(j.nr,j.desc))+'</span>'):'')+'</div>';
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
 
@@ -820,7 +832,7 @@ function de(){
   document.getElementById('_dg')?.remove();
   _ins=null;
 }
-function awov(e,pid,di,ji){e.preventDefault();e.stopPropagation();_ins={pid,di,ji};}
+function awov(e,pid,g,ji){e.preventDefault();e.stopPropagation();_ins={pid,g,ji};}
 function awlv(e){_ins=null;}
 function dov(e,ptype){
   e.preventDefault();
@@ -831,104 +843,79 @@ function dov(e,ptype){
   else e.currentTarget.classList.add('drop-no');
 }
 function dlv(e){e.currentTarget.classList.remove('drop-ok','bw','drop-no');}
-function drop(e,pid,di,ptype){
+function drop(e,pid,g,ptype){
   e.preventDefault();
   e.currentTarget.classList.remove('drop-ok','bw','drop-no');
   const ids=_dragIds.length?_dragIds:(_dragId?[_dragId]:[]);
   if(!ids.length)return;
-
-  // Type-check
   for(const id of ids){
     const j=S.jobs.find(x=>x.id===id);
     if(!j)continue;
     if(jtype(j)!==ptype){toast(j.cel+'-order hoort niet bij '+(ptype==='cnc'?'CNC':'Bankwerk'));return;}
   }
-
-  // Weekend-bevestiging
-  const dropDate=wdates(S.wo)[di];
+  const dropDate=gdate(g);
   const isWknd=!S.workDays.includes(dropDate.getDay());
   if(isWknd){
     const DN=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
     if(!confirm(DN[dropDate.getDay()]+' is geen werkdag. Toch inplannen?'))return;
   }
-
-  // Verwijder uit bron
   if(_dragFrom&&_dragFrom!=='queue'){
-    const li=_dragFrom.lastIndexOf('_');
-    const srcPid=_dragFrom.slice(0,li),srcDi=parseInt(_dragFrom.slice(li+1));
-    const sk=pkey(srcPid,srcDi);
-    if(S.plan[sk])S.plan[sk]=S.plan[sk].filter(x=>!ids.includes(x));
+    if(S.plan[_dragFrom])S.plan[_dragFrom]=S.plan[_dragFrom].filter(x=>!ids.includes(x));
   }
-
   for(const id of ids){
     const j=S.jobs.find(x=>x.id===id);
     if(!j)continue;
-
     const partner=linkedPartner(j);
-
-    // Stap 1: verwijder zowel j als partner volledig uit de planning
     removePlanEntry(id);
     if(partner)removePlanEntry(partner.id);
-
-    const cap=personHrs(pid,di);
-    const used=dayUsed(pid,di);  // herberekend na verwijdering
+    const cap=personHrs(pid,g);
+    const used=dayUsed(pid,g);
     const avail=cap>0?Math.max(0,cap-used):99;
-
-    // Stap 2: past alles op deze dag?
     const totalHrs=j.hrs+(partner?partner.hrs:0);
     if(partner&&avail>=totalHrs){
-      // Smelt samen: uren optellen, split-markering weg
       const root=j.groupId===j.id?j:partner;
       const part=j.groupId===j.id?partner:j;
       root.hrs=Math.round(totalHrs*2)/2;
       delete root.splitNext; delete root.splitOf; delete root.groupId;
       S.jobs=S.jobs.filter(x=>x.id!==part.id);
-      placePlan(pid,di,root.id);
+      placePlan(pid,g,root.id);
       toast('Samengesmolten: '+root.hrs+'u');
       continue;
     }
-
-    // Stap 3: past j alleen op deze dag?
     if(avail>=j.hrs||cap===0){
-      placePlan(pid,di,id);
-      // Partner: zet op volgende werkdag na di
-      if(partner)placeOnNextWorkDay(pid,di,partner.id);
+      placePlan(pid,g,id);
+      if(partner)placeOnNextWorkDay(pid,g,partner.id);
     } else if(avail>=0.5){
-      // Dag heeft deels ruimte: splits j op avail/rest
       const firstHrs=Math.round(avail*2)/2;
       const restHrs=Math.round((j.hrs-firstHrs)*2)/2;
       if(restHrs>=0.5){
-        // Zorg dat j groupId heeft
         if(!j.groupId){j.groupId=j.id;}
         j.hrs=firstHrs;
         if(partner){
-          // Hergebruik bestaande partner
           partner.hrs=Math.round((restHrs+(partner.hrs||0))*2)/2;
         } else {
-          // Maak nieuw split-deel
           const sid='spl'+Date.now()+Math.random().toString(36).slice(2,5);
           const sj={...j,id:sid,hrs:restHrs,groupId:j.groupId,splitOf:j.id};
           delete sj.splitNext;
           j.splitNext=sid;
           S.jobs.push(sj);
         }
-        placePlan(pid,di,id);
+        placePlan(pid,g,id);
         const partId=j.splitNext||(partner&&partner.id);
-        if(partId)placeOnNextWorkDay(pid,di,partId);
+        if(partId)placeOnNextWorkDay(pid,g,partId);
         toast('Gesplitst: '+firstHrs+'u vandaag + '+restHrs+'u volgende dag');
       } else {
-        placePlan(pid,di,id);
-        if(partner)placeOnNextWorkDay(pid,di,partner.id);
+        placePlan(pid,g,id);
+        if(partner)placeOnNextWorkDay(pid,g,partner.id);
       }
     } else {
-      // Dag vol: heel order naar volgende dag
-      placeOnNextWorkDay(pid,di,id);
-      if(partner)placeOnNextWorkDay(pid,di,partner.id);
+      placeOnNextWorkDay(pid,g,id);
+      if(partner)placeOnNextWorkDay(pid,g,partner.id);
       toast('Dag vol — verschoven naar volgende werkdag');
     }
   }
   _ins=null;
-  spillOver(pid,di);
+  spillOver(pid,g);
   render();
 }
 
@@ -939,105 +926,79 @@ function removePlanEntry(id){
   });
 }
 // Helper: voeg toe op positie (insert-before als _ins gezet)
-function placePlan(pid,di,id){
-  const k=pkey(pid,di);
+function placePlan(pid,g,id){
+  const k=pkey(pid,g);
   if(!S.plan[k])S.plan[k]=[];
   S.plan[k]=S.plan[k].filter(x=>x!==id);
-  const idx=(_ins&&_ins.pid===pid&&_ins.di===di)?_ins.ji:S.plan[k].length;
+  const idx=(_ins&&_ins.pid===pid&&_ins.g===g)?_ins.ji:S.plan[k].length;
   S.plan[k].splice(idx,0,id);
 }
 
-function placeOnNextWorkDay(pid,startDi,id){
-  const dates=wdates(S.wo);
-  let nextDi=startDi+1;
-  while(nextDi<7&&!S.workDays.includes(dates[nextDi].getDay()))nextDi++;
-  if(nextDi<7){
-    const k=pkey(pid,nextDi);
-    if(!S.plan[k])S.plan[k]=[];
-    S.plan[k].push(id);
-  } else {
-    const nextWo=S.wo+1;
-    const nd=wdates(nextWo);
-    let ndi=0;
-    while(ndi<7&&!S.workDays.includes(nd[ndi].getDay()))ndi++;
-    const k=`${nextWo}_${pid}_${ndi}`;
-    if(!S.plan[k])S.plan[k]=[];
-    S.plan[k].push(id);
+function placeOnNextWorkDay(pid,startG,id){
+  let g=startG+1;
+  for(let guard=0;guard<400;guard++,g++){
+    const d=gdate(g);
+    if(S.workDays.includes(d.getDay()) && !S.holidays[d.toISOString().slice(0,10)]){
+      const k=pkey(pid,g);
+      if(!S.plan[k])S.plan[k]=[];
+      S.plan[k].push(id);
+      return;
+    }
   }
 }
 
-function spillOver(pid, startDi){
-  for(let di=startDi; di<7; di++){
-    const cap = personHrs(pid, di);
-    if(cap===0) continue;
-    const k = pkey(pid, di);
-    const ids = S.plan[k] || [];
-    if(ids.length===0) continue;
-    // Eerste order blijft altijd staan (mag groter zijn dan een dag); volgende blijven zolang ze passen.
-    let cum=0, keep=0;
+function spillOver(pid,startG){
+  let g=startG;
+  for(let guard=0;guard<400;guard++,g++){
+    const cap=personHrs(pid,g);
+    const k=pkey(pid,g);
+    const ids=S.plan[k]||[];
+    if(cap===0||ids.length===0)continue;
+    let cum=0,keep=0;
     for(let i=0;i<ids.length;i++){
       const jj=S.jobs.find(x=>x.id===ids[i]); const h=(jj&&jj.hrs)||4;
-      if(i===0){ cum=h; keep=1; continue; }
-      if(cum+h<=cap){ cum+=h; keep++; } else break;
+      if(i===0){cum=h;keep=1;continue;}
+      if(cum+h<=cap){cum+=h;keep++;}else break;
     }
-    if(keep>=ids.length) continue;            // alles past, niets te verschuiven
-    const overflow = ids.slice(keep);
-    S.plan[k] = ids.slice(0, keep);
-    const dates = wdates(S.wo);
-    let nextDi = di+1;
-    while(nextDi<7 && !S.workDays.includes(dates[nextDi].getDay())) nextDi++;
-    if(nextDi < 7){
-      const kn = pkey(pid, nextDi);
-      if(!S.plan[kn]) S.plan[kn] = [];
-      S.plan[kn] = [...overflow, ...S.plan[kn]];   // duw door naar de dag erachter
-    } else {
-      const nextWo = S.wo + 1;
-      const nextDates = wdates(nextWo);
-      let nextWkDi = 0;
-      while(nextWkDi<7 && !S.workDays.includes(nextDates[nextWkDi].getDay())) nextWkDi++;
-      if(nextWkDi < 7){
-        const kn = `${nextWo}_${pid}_${nextWkDi}`;
-        if(!S.plan[kn]) S.plan[kn] = [];
-        S.plan[kn] = [...overflow, ...S.plan[kn]];
-        toast('Volgende orders naar volgende week (deze week vol)');
+    if(keep>=ids.length)continue;
+    const overflow=ids.slice(keep);
+    S.plan[k]=ids.slice(0,keep);
+    let ng=g+1;
+    for(let g2=0;g2<400;g2++,ng++){
+      const nd=gdate(ng);
+      if(S.workDays.includes(nd.getDay()) && !S.holidays[nd.toISOString().slice(0,10)]){
+        const kn=pkey(pid,ng);
+        if(!S.plan[kn])S.plan[kn]=[];
+        S.plan[kn]=[...overflow,...S.plan[kn]];
+        break;
       }
-      break;
     }
+    g=ng-1;
   }
 }
 
-function changeHrs(jid, delta, pid, di){
+function changeHrs(jid, delta, pid, g){
   const j = S.jobs.find(x=>x.id===jid);
   if(!j) return;
   j.hrs = Math.max(0.5, Math.round((j.hrs + delta)*2)/2);
-  spillOver(pid, di);
+  spillOver(pid, g);
   render();
 }
 
-function rmPlan(pid,di,jid){
-  const k=pkey(pid,di);
+function rmPlan(pid,g,jid){
+  const k=pkey(pid,g);
   if(S.plan[k])S.plan[k]=S.plan[k].filter(x=>x!==jid);
-
-  // Verwijder ook gekoppelde split-delen
   const j=S.jobs.find(x=>x.id===jid);
   if(j){
-    // Als dit het origineel is en er is een splitNext
     if(j.splitNext){
       const splitId=j.splitNext;
       Object.keys(S.plan).forEach(k2=>{ S.plan[k2]=(S.plan[k2]||[]).filter(x=>x!==splitId); });
       S.jobs=S.jobs.filter(x=>x.id!==splitId);
-      // Herstel originele uren (splitNext verwijst naar deel dat we verwijderen)
       delete j.splitNext;
     }
-    // Als dit een split-deel is, zet origineel terug in wachtrij
     if(j.splitOf){
       const orig=S.jobs.find(x=>x.id===j.splitOf);
-      if(orig){
-        // Herstel uren: orig.hrs + dit.hrs
-        orig.hrs=Math.round((orig.hrs+j.hrs)*2)/2;
-        delete orig.splitNext;
-      }
-      // Verwijder dit split-exemplaar volledig
+      if(orig){ orig.hrs=Math.round((orig.hrs+j.hrs)*2)/2; delete orig.splitNext; }
       S.jobs=S.jobs.filter(x=>x.id!==jid);
     }
   }
@@ -1558,41 +1519,32 @@ function applyPlanSearch(){
 // Hertoepassen na elke render
 // render search hook removed - integrated directly
 
-function chWeek(d){S.wo+=d;render();}
+function chWeek(d){}
+let _showPast=false;
+function toggleShowPast(){_showPast=!_showPast;renderGrid();}
 function toggleSec(type){S.collapsed[type]=!S.collapsed[type];render();}
 
-function toggleHoliday(ds,di){
+function toggleHoliday(ds,g){
   if(S.holidays[ds]){
-    // Verwijderen
     delete S.holidays[ds];
     render();
     toast('Feestdag verwijderd');
   } else {
-    // Toevoegen + orders verschuiven
     S.holidays[ds]=true;
-    // Verschuif orders van alle personen op die dag
     let moved=0;
     allPeople().forEach(p=>{
-      const k=pkey(p.id,di);
+      const k=pkey(p.id,g);
       const orders=S.plan[k]||[];
       if(!orders.length)return;
-      // Zoek volgende werkdag (geen feestdag)
-      let nextDi=di+1;
-      const dates=wdates(S.wo);
-      while(nextDi<7&&(!S.workDays.includes(dates[nextDi].getDay())||S.holidays[dates[nextDi].toISOString().slice(0,10)])){nextDi++;}
-      if(nextDi<7){
-        const kn=pkey(p.id,nextDi);
-        if(!S.plan[kn])S.plan[kn]=[];
-        S.plan[kn]=[...orders,...S.plan[kn]];
-      } else {
-        // Volgende week
-        const nextWo=S.wo+1;
-        const nd=wdates(nextWo);
-        let ndi=0;
-        while(ndi<7&&(!S.workDays.includes(nd[ndi].getDay())||S.holidays[nd[ndi].toISOString().slice(0,10)])){ndi++;}
-        const kn=nextWo+'_'+p.id+'_'+ndi;
-        if(!S.plan[kn])S.plan[kn]=[];
-        S.plan[kn]=[...orders,...S.plan[kn]];
+      let ng=g+1, placed=false;
+      for(let guard=0;guard<400 && !placed;guard++,ng++){
+        const nd=gdate(ng);
+        if(S.workDays.includes(nd.getDay()) && !S.holidays[nd.toISOString().slice(0,10)]){
+          const kn=pkey(p.id,ng);
+          if(!S.plan[kn])S.plan[kn]=[];
+          S.plan[kn]=[...orders,...S.plan[kn]];
+          placed=true;
+        }
       }
       S.plan[k]=[];
       moved+=orders.length;
@@ -1732,11 +1684,11 @@ function exportPlanning(){
 }
 
 // ── CONTEXT MENU ─────────────────────────────────────────────────
-let _ctxPid=null, _ctxDi=null, _evType='sick';
+let _ctxPid=null, _ctxG=null, _evType='sick';
 
 function showPersonCtx(e,pid){
   e.preventDefault();
-  _ctxPid=pid; _ctxDi=null;
+  _ctxPid=pid; _ctxG=null;
   const p=allPeople().find(x=>x.id===pid);
   const dates=wdates(S.wo);
   const menu=document.getElementById('ctxMenu');
@@ -1752,12 +1704,11 @@ function showPersonCtx(e,pid){
   showCtxAt(e,h);
 }
 
-function showCellCtx(e,pid,di){
+function showCellCtx(e,pid,g){
   e.preventDefault();
-  _ctxPid=pid; _ctxDi=di;
+  _ctxPid=pid; _ctxG=g;
   const p=allPeople().find(x=>x.id===pid);
-  const dates=wdates(S.wo);
-  const d=dates[di];
+  const d=gdate(g);
   const ds=d.toISOString().slice(0,10);
   const ev=S.events[pid+'_'+ds];
   const DNAMES=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
@@ -1765,12 +1716,12 @@ function showCellCtx(e,pid,di){
   if(ev){
     h+=`<div style="padding:6px 12px;font-size:11px;background:var(--amb-l);color:var(--amb)">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`;
     h+=`<div class="ctx-sep"></div>`;
-    h+=`<button class="ctx-item" onclick="clearEvent('${pid}',${di})">✓ Deze dag vrijgeven</button>`;
-    h+=`<button class="ctx-item" onclick="clearEventForward('${pid}',${di})">✓ Afwezigheid wissen (deze + volgende dagen)</button>`;
+    h+=`<button class="ctx-item" onclick="clearEvent('${pid}',${g})">✓ Deze dag vrijgeven</button>`;
+    h+=`<button class="ctx-item" onclick="clearEventForward('${pid}',${g})">✓ Afwezigheid wissen (deze + volgende dagen)</button>`;
   } else {
-    h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${di},'sick')">🤒 Ziek melden</button>`;
-    h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${di},'breakdown')">🔧 Machine stuk</button>`;
-    h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${di},'other')">✏️ Andere reden…</button>`;
+    h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${g},'sick')">🤒 Ziek melden</button>`;
+    h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${g},'breakdown')">🔧 Machine stuk</button>`;
+    h+=`<button class="ctx-item" onclick="openEventForDay('${pid}',${g},'other')">✏️ Andere reden…</button>`;
   }
   showCtxAt(e,h);
 }
@@ -1787,15 +1738,13 @@ function showCtxAt(e,html){
 function closeCtx(){document.getElementById('ctxMenu').classList.add('hidden');}
 
 // ── EVENTS (ziek / machine stuk) ─────────────────────────────────
-function openEventForDay(pid, di, type='sick'){
+function openEventForDay(pid, g, type='sick'){
   closeCtx();
-  _ctxPid=pid; _ctxDi=di; _evType=type;
+  _ctxPid=pid; _ctxG=g; _evType=type;
   const p=allPeople().find(x=>x.id===pid);
-  const dates=wdates(S.wo);
-  const d=dates[di];
+  const d=gdate(g);
   const DNAMES=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
   document.getElementById('ev-info').textContent=`${p?.name||''} — ${DNAMES[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
-  // Selecteer type
   document.querySelectorAll('.ev-type-btn').forEach(btn=>{
     const sel=btn.dataset.t===type;
     btn.style.background=sel?'var(--ink)':'#fff';
@@ -1829,9 +1778,8 @@ function planKeyForDate(pid, dateObj){
   return wo+'_'+pid+'_'+di;
 }
 function confirmEvent(){
-  if(_ctxPid===null||_ctxDi===null) return;
-  const dates=wdates(S.wo);
-  const start=new Date(dates[_ctxDi]); start.setHours(0,0,0,0);
+  if(_ctxPid===null||_ctxG===null) return;
+  const start=new Date(gdate(_ctxG)); start.setHours(0,0,0,0);
   const note=document.getElementById('ev-note').value.trim();
   const untilVal=(document.getElementById('ev-until')||{}).value||'';
   let end=new Date(start);
@@ -1845,7 +1793,6 @@ function confirmEvent(){
     if(S.workDays.includes(dow) && !S.holidays[ds]){ S.events[pid+'_'+ds]=ev; absent.push(new Date(d)); }
     d.setDate(d.getDate()+1);
   }
-  // Orders van afwezige dagen doorschuiven naar eerste vrije werkdag na de periode
   let bumped=[];
   absent.forEach(function(dt){ const pk=planKeyForDate(pid,dt); if(S.plan[pk]&&S.plan[pk].length){ bumped=bumped.concat(S.plan[pk]); S.plan[pk]=[]; } });
   if(bumped.length){
@@ -1863,9 +1810,9 @@ function confirmEvent(){
   render();
   toast((_evType==='sick'?'🤒 Ziek':_evType==='breakdown'?'🔧 Machine stuk':'⚠️ Afwezig')+(dagen>1?` — ${dagen} dagen`:'')+(bumped.length?` · ${bumped.length} orders doorgeschoven`:''));
 }
-function clearEventForward(pid,di){
+function clearEventForward(pid,g){
   closeCtx();
-  let d=new Date(wdates(S.wo)[di]); d.setHours(0,0,0,0);
+  let d=new Date(gdate(g)); d.setHours(0,0,0,0);
   let cleared=0, guard=0;
   while(guard++<200){
     const ds=d.toISOString().slice(0,10); const dow=d.getDay();
@@ -1880,15 +1827,14 @@ function clearEventForward(pid,di){
 }
 
 // ── CHIP CONTEXT MENU ──────────────────────────────────────────
-function showChipCtx(e,jid,pid,di){
+function showChipCtx(e,jid,pid,g){
   e.preventDefault();e.stopPropagation();
   closeCtx();
   const j=S.jobs.find(x=>x.id===jid);
   if(!j)return;
-  const menu=document.getElementById('ctxMenu');
   let h=`<div class="ctx-head">${j.desc.slice(0,30)}</div>`;
-  h+=`<button class="ctx-item" onclick="closeCtx();markDone('${jid}','${pid}',${di})">✓ Afgerond</button>`;
-  h+=`<button class="ctx-item" onclick="closeCtx();openDetail('${jid}')">\u2139 Details</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();markDone('${jid}','${pid}',${g})">✓ Afgerond</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();openDetail('${jid}')">ℹ Details</button>`;
   h+=`<div class="ctx-sep"></div>`;
   if(j.blocked){
     h+=`<button class="ctx-item" onclick="closeCtx();openUnblock('${jid}')">✓ Vrijgeven</button>`;
@@ -1896,16 +1842,16 @@ function showChipCtx(e,jid,pid,di){
     h+=`<button class="ctx-item" onclick="closeCtx();openBlock('${jid}')">⚠ Blokkeren</button>`;
   }
   h+=`<div class="ctx-sep"></div>`;
-  h+=`<button class="ctx-item" onclick="closeCtx();moveToWeek('${jid}','${pid}',${di},-1)">← Vorige week</button>`;
-  h+=`<button class="ctx-item" onclick="closeCtx();moveToWeek('${jid}','${pid}',${di},1)">→ Volgende week</button>`;
-  h+=`<button class="ctx-item" onclick="closeCtx();rmPlan('${pid}',${di},'${jid}')">↩ Terug naar wachtrij</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();moveToWeek('${jid}','${pid}',${g},-1)">← 1 week vroeger</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();moveToWeek('${jid}','${pid}',${g},1)">→ 1 week later</button>`;
+  h+=`<button class="ctx-item" onclick="closeCtx();rmPlan('${pid}',${g},'${jid}')">↩ Terug naar wachtrij</button>`;
   showCtxAt(e,h);
 }
 
 // ── AFGEROND ────────────────────────────────────────────────────
 let _doneTarget=null;
-function markDone(jid,pid,di){
-  _doneTarget={jid,pid,di};
+function markDone(jid,pid,g){
+  _doneTarget={jid,pid,g};
   const j=S.jobs.find(x=>x.id===jid);
   const p=allPeople().find(x=>x.id===pid);
   document.getElementById('done-jinfo').innerHTML=
@@ -1917,22 +1863,20 @@ function markDone(jid,pid,di){
 function closeDoneModal(){document.getElementById('doneModal').classList.add('hidden');_doneTarget=null;}
 function confirmDone(){
   if(!_doneTarget)return;
-  const{jid,pid,di}=_doneTarget;
+  const{jid,pid,g}=_doneTarget;
   const j=S.jobs.find(x=>x.id===jid);
   const p=allPeople().find(x=>x.id===pid);
   const actHrs=parseFloat(document.getElementById('done-hrs-inp').value)||j.hrs;
-  const dates=wdates(S.wo);
-  // Sla op in history
+  const dt=gdate(g);
   S.history.push({
     pid,pname:p?.name||'',
     jid,nr:j.nr,desc:j.desc,klant:j.klant||'',cel:j.cel,
     estHrs:j.hrs,actHrs,
-    date:dates[di].toISOString().slice(0,10),
-    week:`W${wnum(dates[di])}`,
+    date:dt.toISOString().slice(0,10),
+    week:`W${wnum(dt)}`,
   });
-  // Order blijft in planning maar wordt gemarkeerd als afgerond
   j.done=true;
-  j.doneDate=dates[di].toISOString().slice(0,10);
+  j.doneDate=dt.toISOString().slice(0,10);
   closeDoneModal();render();toast('✓ Afgerond — output opgeslagen');
 }
 
@@ -1992,21 +1936,19 @@ function exportOutput(){
   toast('CSV gedownload ✓');
 }
 
-function undoDone(jid,pid,di){
+function undoDone(jid,pid,g){
   const j=S.jobs.find(x=>x.id===jid);
   if(!j)return;
   j.done=false;
   delete j.doneDate;
-  // Verwijder ook uit history
-  const k=pkey(pid,di);
   S.history=S.history.filter(r=>r.jid!==jid);
   render();
   toast('↩ Afgerond ongedaan gemaakt');
 }
 
-function clearEvent(pid,di){
+function clearEvent(pid,g){
   closeCtx();
-  const ds=wdates(S.wo)[di].toISOString().slice(0,10);
+  const ds=gdate(g).toISOString().slice(0,10);
   delete S.events[pid+'_'+ds];
   render();
   toast('Event verwijderd');
@@ -2039,7 +1981,7 @@ function saveSett(){
   S.workDays = [...document.getElementById('s-days').querySelectorAll('[data-on="1"]')].map(el=>parseInt(el.dataset.i));
   closeSett();render();toast('Instellingen opgeslagen ✓');
 }
-function goToday(){S.wo=0;render();}
+function goToday(){S.wo=0;_showPast=false;renderGrid();setTimeout(function(){var el=document.getElementById('todayRow');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});},60);}
 function toast(msg){
   const t=document.getElementById('toast');
   t.textContent=msg;t.classList.add('show');
@@ -2272,11 +2214,11 @@ function cleanDesc(nr,desc){
   if(pm){ var p=pm[1].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); desc=desc.replace(new RegExp('^\\s*'+p+'[\\s,;:\\-]*','i'),''); }
   return desc;
 }
-function setHrsAbs(jid,val,pid,di){
+function setHrsAbs(jid,val,pid,g){
   var j=S.jobs.find(function(x){return x.id===jid;}); if(!j)return;
   var n=parseFloat(String(val).replace(',','.')); if(isNaN(n))return;
   j.hrs=Math.max(0.5,Math.round(n*2)/2);
-  if(typeof spillOver==='function')spillOver(pid,di);
+  if(typeof spillOver==='function')spillOver(pid,g);
   render();
 }
 function setSpHrsAbs(jid,val){
@@ -2287,21 +2229,19 @@ function setSpHrsAbs(jid,val){
 }
 
 // ── Order naar andere week verplaatsen ──
-function moveToWeek(jid,pid,di,delta){
+function moveToWeek(jid,pid,g,delta){
   if(window.__readonly)return;
-  const fromK=pkey(pid,di);
+  const fromK=pkey(pid,g);
   if(S.plan[fromK]) S.plan[fromK]=S.plan[fromK].filter(function(x){return x!==jid;});
-  const targetWo=S.wo+delta;
-  const tdates=wdates(targetWo);
-  let tdi=di;
-  if(!S.workDays.includes(tdates[tdi].getDay())){ tdi=0; while(tdi<7 && !S.workDays.includes(tdates[tdi].getDay())) tdi++; }
-  const toK=targetWo+'_'+pid+'_'+tdi;
+  let tg=g+delta*7;
+  let guard=0;
+  while(guard++<14 && !S.workDays.includes(gdate(tg).getDay())) tg+=(delta>=0?1:-1);
+  const toK=pkey(pid,tg);
   if(!S.plan[toK]) S.plan[toK]=[];
   S.plan[toK].push(jid);
-  S.wo=targetWo;
-  if(typeof spillOver==='function') spillOver(pid,tdi);
+  if(typeof spillOver==='function') spillOver(pid,tg);
   render();
-  if(typeof toast==='function') toast(delta>0?'→ Volgende week':'← Vorige week');
+  if(typeof toast==='function') toast(delta>0?'→ 1 week later':'← 1 week vroeger');
 }
 
 // ── Slepen naar de rand → week vooruit/terug, met zichtbare zones ──
@@ -2327,6 +2267,7 @@ function moveToWeek(jid,pid,di,delta){
     return {left:r.left, rightEdge:rightEdge, w:w, top:top, h:h};
   }
   document.addEventListener('dragover', function(e){
+    return; // week-rand-navigatie uit (doorlopende lijst)
     if(!document.body.classList.contains('dragging')){ clr(); remove(); return; }
     var p=place(); if(!p) return;
     var dir=0;
