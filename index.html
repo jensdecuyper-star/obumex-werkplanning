@@ -1067,8 +1067,9 @@ function toggleSP(){
   document.getElementById('sp').classList.toggle('open',_spOpen);
   document.getElementById('sp-overlay').classList.toggle('hidden',!_spOpen);
   document.getElementById('sp-btn').classList.toggle('green',_spOpen);
-  document.querySelector('.grid-wrap').style.paddingRight=_spOpen?'424px':'';
-  document.querySelector('.cap-bar').style.paddingRight=_spOpen?'424px':'';
+  document.querySelector('.grid-wrap').style.marginRight=_spOpen?'430px':'';
+  document.querySelector('.grid-wrap').style.paddingRight='';
+  document.querySelector('.cap-bar').style.marginRight=_spOpen?'430px':'';
   if(_spOpen){S.qSelected=new Set();renderSP();}
 }
 function handleRestore(e){
