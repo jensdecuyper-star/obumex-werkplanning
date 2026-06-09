@@ -324,6 +324,13 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .wg-daylabel.today{background:#111}
 .wg-daylabel.wknd{background:repeating-linear-gradient(45deg,#f7f6f3,#f7f6f3 6px,#f0eee9 6px,#f0eee9 12px)}
 .wg-daylabel.holiday{background:var(--amb-l)}
+.aw{padding:7px 8px;min-height:92px}
+.aw-proj{font-family:monospace;font-size:11px;font-weight:800;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aw-klantline{font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;margin:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aw-fase{margin:2px 0 1px;line-height:1.25;word-break:break-word}
+.aw-fasenr{font-size:13px;font-weight:800;color:var(--ink)}
+.aw-fasenaam{font-size:11px;font-weight:600;color:var(--ink)}
+.aw-foot{display:flex;align-items:center;gap:3px;margin-top:5px}
 </style>
 </head>
 <body>
@@ -728,7 +735,10 @@ function chipHTML(j,pid,di,ji){
   const delBtn='<span class="aw-del" onclick="event.stopPropagation();rmPlan(\''+pid+'\','+di+',\''+j.id+'\')" title="Terug naar wachtrij">&#215;</span>';
   const klantPill=j.klant?('<span class="aw-kpill" style="border-color:'+werfColor+'"><span class="klant-dot" style="background:'+werfColor+'"></span>'+j.klant+'</span>'):'';
   const routesHtml=routesChips(j);
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-code">'+fmtNr(j.nr)+'</span>'+delBtn+'</div><div class="aw-desc">'+cleanDesc(j.nr,j.desc)+'</div>'+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+klantPill+'<span class="aw-hrs">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</span></div></div>';
+  const projTxt=escapeHtml(j.project||j.nr||'');
+  const klantLine=j.klant?('<div class="aw-klantline"><span class="klant-dot" style="background:'+werfColor+'"></span>'+escapeHtml(j.klant)+'</div>'):'';
+  const faseLine='<div class="aw-fase"><span class="aw-fasenr">'+escapeHtml(j.fase||'')+'</span>'+(j.desc?(' <span class="aw-fasenaam">'+escapeHtml(cleanDesc(j.nr,j.desc))+'</span>'):'')+'</div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
 
@@ -1391,37 +1401,39 @@ function importRows(rows){
   var iStatus=col('status','voortgang','gereed');
   if(iNr<0){ alert('Import kon niet worden uitgevoerd.\n\nVerplichte kolom niet gevonden: ponr (ordernummer).\n\nGevonden kolommen:\n'+hdr.join(', ')); toast('Import gestopt: kolom ontbreekt'); return; }
   function parseNr(nr){var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim(),route:''};}
-  var imp={}, faseOrder=[];
+  function gk(project,fase){return (project||'')+'||'+fase;}
+  var imp={}, order=[];
   rows.slice(hi+1).forEach(function(row){
     if(!row||row.every(function(c){return !c;}))return;
     var nr=String(row[iNr]||'').trim(); if(!nr)return;
     var pp=parseNr(nr); var fase=pp.fase; if(!fase)return;
+    var key=gk(pp.project,fase);
     var desc=iDesc>=0?String(row[iDesc]||'').trim():'';
     var klant=iKlant>=0?String(row[iKlant]||'').trim():'';
     var cel=iCel>=0?String(row[iCel]||'').trim():'';
     var status=iStatus>=0?String(row[iStatus]||'').trim():'';
     var dl=iDl>=0?String(row[iDl]||'').trim():'';
-    if(!imp[fase]){imp[fase]={fase:fase,project:pp.project,klant:klant,desc:desc,deadline:dl,routes:[]};faseOrder.push(fase);}
-    var F=imp[fase];
-    if(!F.project&&pp.project)F.project=pp.project;
+    if(!imp[key]){imp[key]={project:pp.project,fase:fase,klant:klant,desc:desc,deadline:dl,routes:[]};order.push(key);}
+    var F=imp[key];
     if(!F.klant&&klant)F.klant=klant;
     if(!F.desc&&desc)F.desc=desc;
     if(dl){ if(!F.deadline)F.deadline=dl; else { var a=parseDMY(dl),b=parseDMY(F.deadline); if(a&&b&&a<b)F.deadline=dl; } }
     F.routes.push({route:pp.route||cel||'?',cel:cel,status:status});
   });
-  var importFases=new Set(faseOrder);
+  order.forEach(function(k){imp[k].routes=dedupeRoutes(imp[k].routes);});
+  var importKeys=new Set(order);
   var existing=new Map();
-  S.jobs.forEach(function(j){ if(j.fase) existing.set(j.fase,j); });
+  S.jobs.forEach(function(j){ if(j.fase) existing.set(gk(j.project,j.fase),j); });
   var planned=allAssigned(); var removed=0;
-  if(importFases.size>0) S.jobs.forEach(function(j){
+  if(importKeys.size>0) S.jobs.forEach(function(j){
     if(j.done||!j.fase)return;
-    if(!importFases.has(j.fase) && !planned.has(j.id)){ j.done=true; removed++; }
+    if(!importKeys.has(gk(j.project,j.fase)) && !planned.has(j.id)){ j.done=true; removed++; }
   });
   var added=0,upd=0,revived=0; var dlChanges=[];
-  faseOrder.forEach(function(fase){
-    var F=imp[fase];
-    if(existing.has(fase)){
-      var ex=existing.get(fase);
+  order.forEach(function(key){
+    var F=imp[key];
+    if(existing.has(key)){
+      var ex=existing.get(key);
       if(ex.done){ex.done=false;revived++;}
       if(F.desc)ex.desc=F.desc; if(F.klant)ex.klant=F.klant; if(F.project)ex.project=F.project;
       ex.nr=(ex.project?ex.project+'-':'')+ex.fase;
@@ -2378,13 +2390,24 @@ function openHold(){
 
 // ── Fase-model: migratie + route-weergave ──
 function routeCelShort(c){c=(c||'').trim();if(/bankwerk/i.test(c))return 'BW';if(/cnc/i.test(c))return 'CNC';return c;}
+function routeAtBankwerk(cel){return /bankwerk/i.test(cel||'');}
+function dedupeRoutes(rs){
+  var by={},order=[];
+  (rs||[]).forEach(function(r){
+    var k=String(r.route||'').toUpperCase();
+    if(!by[k]){by[k]={route:r.route,cel:r.cel,status:r.status};order.push(k);}
+    else if(routeAtBankwerk(r.cel)){by[k].cel=r.cel;by[k].status=r.status;}
+  });
+  return order.map(function(k){return by[k];});
+}
 function routesChips(j){
-  var rs=(j&&j.routes)||[];
+  var rs=dedupeRoutes((j&&j.routes)||[]);
   if(!rs.length)return '';
   return '<div class="aw-routes">'+rs.map(function(r){
-    var m=statusMeta(r.status);
+    var bw=routeAtBankwerk(r.cel);
+    var bg=bw?'var(--grn-l)':'var(--red-l)', col=bw?'var(--grn)':'var(--red)', bd=bw?'#a7e3c0':'#f3aaaa';
     var lbl=(r.route||'')+(r.cel?(' '+routeCelShort(r.cel)):'');
-    return '<span class="rt-chip" title="'+escapeHtml((r.route||'')+' '+(r.cel||'')+(r.status?(' · '+r.status):''))+'" style="background:'+m.b+';color:'+m.c+';border:.5px solid '+m.bd+'">'+escapeHtml(lbl)+'</span>';
+    return '<span class="rt-chip" title="'+escapeHtml((r.route||'')+' '+(r.cel||'')+(bw?' — bij bankwerk':' — nog ervoor'))+'" style="background:'+bg+';color:'+col+';border:.5px solid '+bd+'">'+escapeHtml(lbl)+'</span>';
   }).join('')+'</div>';
 }
 function migrateToFase(){
@@ -2394,7 +2417,7 @@ function migrateToFase(){
   function pn(nr){var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim()||'?',route:''};}
   var map={},order=[];
   S.jobs.forEach(function(j){
-    var pp=pn(j.nr); var key=pp.fase;
+    var pp=pn(j.nr); var key=pp.project+'||'+pp.fase;
     if(!map[key]){map[key]={id:'fase_'+key+'_'+Math.random().toString(36).slice(2,7),fase:pp.fase,project:pp.project,nr:(pp.project?pp.project+'-':'')+pp.fase,klant:j.klant||'',desc:(typeof cleanDesc==='function'?cleanDesc(j.nr,j.desc):j.desc)||(j.desc||''),hrs:8,deadline:j.deadline||'',blocked:false,blockedReason:'',blockedUntil:'',done:false,routes:[],_old:[]};order.push(key);}
     var F=map[key];
     if(j.klant&&!F.klant)F.klant=j.klant;
@@ -2405,6 +2428,7 @@ function migrateToFase(){
     if(j.blocked){F.blocked=true; if(!F.blockedReason)F.blockedReason=j.blockedReason||'';}
   });
   var jobs=order.map(function(k){return map[k];});
+  jobs.forEach(function(F){F.routes=dedupeRoutes(F.routes);});
   var o2n={}; jobs.forEach(function(F){F._old.forEach(function(oid){o2n[oid]=F.id;}); delete F._old;});
   var bw={}; (S.bw||[]).forEach(function(p){bw[p.id]=1;});
   var np={};
