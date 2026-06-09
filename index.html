@@ -331,6 +331,11 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .aw-fasenr{font-size:13px;font-weight:800;color:var(--ink)}
 .aw-fasenaam{font-size:11px;font-weight:600;color:var(--ink)}
 .aw-foot{display:flex;align-items:center;gap:3px;margin-top:5px}
+.rdy{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:5px;margin:2px 0;white-space:nowrap}
+.rdy-ok{background:var(--grn-l);color:var(--grn);border:.5px solid #a7e3c0}
+.rdy-wait{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
+.wg-corner{position:sticky;left:0;z-index:21}
+.wg-daylabel{position:sticky;left:0;z-index:6}
 </style>
 </head>
 <body>
@@ -738,7 +743,7 @@ function chipHTML(j,pid,di,ji){
   const projTxt=escapeHtml(j.project||j.nr||'');
   const klantLine=j.klant?('<div class="aw-klantline"><span class="klant-dot" style="background:'+werfColor+'"></span>'+escapeHtml(j.klant)+'</div>'):'';
   const faseLine='<div class="aw-fase"><span class="aw-fasenr">'+escapeHtml(j.fase||'')+'</span>'+(j.desc?(' <span class="aw-fasenaam">'+escapeHtml(cleanDesc(j.nr,j.desc))+'</span>'):'')+'</div>';
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+di+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
 
@@ -1107,6 +1112,8 @@ function renderSP(){
   const spSortEl=document.getElementById('sp-sort');
   if(spSortEl)spSortEl.value=S.spSort||'deadline';
   const sorted=Object.values(grps).sort((a,b)=>{
+    const ra=a.jobs.some(j=>faseReady(j).ready)?0:1, rb=b.jobs.some(j=>faseReady(j).ready)?0:1;
+    if(ra!==rb)return ra-rb;
     if(S.spSort==='klant')return a.klant.localeCompare(b.klant);
     if(S.spSort==='hrs')return b.jobs.reduce((s,j)=>s+j.hrs,0)-a.jobs.reduce((s,j)=>s+j.hrs,0);
     // deadline (default)
@@ -1133,7 +1140,8 @@ function renderSP(){
     const bwHrs=g.jobs.filter(j=>jtype(j)==='bw').reduce((s,j)=>s+j.hrs,0);
     const wc=kColor(g.klant);
     const ordersHtml=[...g.jobs].sort((a,b)=>{
-      if(jtype(a)!==jtype(b))return jtype(a)==='cnc'?-1:1;
+      const ra=faseReady(a).ready?0:1, rb=faseReady(b).ready?0:1;
+      if(ra!==rb)return ra-rb;
       return (parseDMY(a.deadline)||new Date(9999,0,1))-(parseDMY(b.deadline)||new Date(9999,0,1));
     }).map(j=>{
       const t=jtype(j);
@@ -1148,7 +1156,7 @@ function renderSP(){
         <div class="sp-oinfo">
           <div class="sp-onr">${fmtNr(j.nr)}</div>
           <div class="sp-odesc">${cleanDesc(j.nr,j.desc)}</div>
-          ${routesChips(j)}
+          ${readyBadge(j)}${routesChips(j)}
           ${j.klant?`<div class="sp-oklant"><span class="klant-dot" style="background:${kc}"></span>${j.klant}</div>`:''}
           <div class="sp-ometa">
             ${blk?`<span class="sp-opill blk">⚠ Geblokkeerd</span><span style="font-size:9px;color:var(--amb)">${j.blockedReason?.slice(0,22)}</span>`:''}
@@ -2440,6 +2448,19 @@ function migrateToFase(){
     if(ids.length)np[key]=ids;
   });
   S.jobs=jobs; S.plan=np; S._faseModel=true;
+}
+
+// ── Gereedheid: alle routes bij bankwerk = klaar om op te bouwen ──
+function faseReady(j){
+  var rs=dedupeRoutes((j&&j.routes)||[]);
+  var atBw=rs.filter(function(r){return routeAtBankwerk(r.cel);}).length;
+  return {atBw:atBw,total:rs.length,ready:(rs.length>0&&atBw===rs.length)};
+}
+function readyBadge(j){
+  var r=faseReady(j);
+  if(!r.total)return '';
+  if(r.ready)return '<span class="rdy rdy-ok">✓ klaar om op te bouwen</span>';
+  return '<span class="rdy rdy-wait">'+r.atBw+'/'+r.total+' bij bankwerk</span>';
 }
 </script>
 </body>
