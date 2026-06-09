@@ -60,7 +60,12 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .app{display:flex;flex-direction:column;height:calc(100vh - 52px)}
 
 /* ── CAPBAR ── */
-.cap-bar{display:flex;background:#fff;border-bottom:.5px solid var(--line);flex-shrink:0;overflow-x:auto}
+.cap-bar{display:none}
+.more-wrap{position:relative;display:inline-block}
+.more-menu{position:absolute;top:calc(100% + 6px);right:0;background:#1f1f1c;border:.5px solid #444;border-radius:8px;padding:5px;min-width:200px;z-index:600;box-shadow:0 8px 24px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px}
+.more-item{background:none;border:none;color:#d8d4ca;text-align:left;padding:8px 10px;border-radius:5px;cursor:pointer;font-size:12px;font-family:inherit;white-space:nowrap}
+.more-item:hover{background:#2e2e29;color:#fff}
+.more-sep{height:1px;background:#3a3a36;margin:4px 2px}
 .cap-day{padding:5px 10px;min-width:0;flex:1;border-right:.5px solid var(--line)}
 .cap-day:last-child{border-right:none}
 .cap-lbl{font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;white-space:nowrap}
@@ -384,7 +389,6 @@ body.floor-on{overflow:hidden}
   <div class="top-nav">
     <button class="nav-btn" onclick="goToday()">⌖ Vandaag</button>
   </div>
-  <span class="wklbl" id="wklbl"></span>
   <div style="position:relative;margin:0 8px">
     <input id="planSearch" placeholder="Zoek in planning… (Ctrl+F)" autocomplete="off"
       style="padding:5px 30px 5px 10px;border:.5px solid #444;border-radius:6px;background:#1a1a18;color:#e0ddd6;font-size:11px;width:200px;outline:none;font-family:inherit"
@@ -396,24 +400,31 @@ body.floor-on{overflow:hidden}
   <div class="top-r">
     <button class="tbtn" onclick="toggleSP()" id="sp-btn">📋 Wachtrij <span class="badge-cnt hidden" id="sp-cnt">0</span></button>
     <button class="tbtn" onclick="openHold()" id="hold-btn">⏸ On hold <span class="badge-cnt hidden" id="hold-cnt">0</span></button>
-    <label class="tbtn accent" style="cursor:pointer">↑ Propos import
+    <button class="tbtn accent" onclick="openAdd()">+ Order</button>
+    <label class="tbtn" style="cursor:pointer">↑ Import
       <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImport(event)">
     </label>
-    <button class="tbtn" onclick="openPeople()">👥 Mensen</button>
-    <button class="tbtn" onclick="openAdd()">+ Order</button>
-    <button class="tbtn" onclick="exportPlanning()">↓ Export</button>
-    <button class="tbtn" onclick="printPlanning('all')">🖨 Week</button>
-    <button class="tbtn" onclick="printPlanning('person')">🖨 Per persoon</button>
-    <button class="tbtn" onclick="openOutput()">📊 Output</button>
+    <span class="vsep"></span>
     <button class="tbtn" id="cardModeBtn" onclick="toggleCardMode()">▬ Compact</button>
-    <button class="tbtn" onclick="toggleLegend()">ℹ Legende</button>
     <button class="tbtn" onclick="openFloor()">📺 Atelier</button>
-    <button class="tbtn" onclick="openSett()">⚙</button>
+    <span class="vsep"></span>
+    <div class="more-wrap">
+      <button class="tbtn" onclick="toggleMore(event)">⋯ Meer</button>
+      <div class="more-menu hidden" id="moreMenu">
+        <button class="more-item" onclick="closeMore();openPeople()">👥 Mensen</button>
+        <button class="more-item" onclick="closeMore();openOutput()">📊 Output</button>
+        <button class="more-item" onclick="closeMore();toggleLegend()">ℹ Legende tonen/verbergen</button>
+        <div class="more-sep"></div>
+        <button class="more-item" onclick="closeMore();exportPlanning()">↓ Export (CSV)</button>
+        <button class="more-item" onclick="closeMore();printPlanning('all')">🖨 Print week</button>
+        <button class="more-item" onclick="closeMore();printPlanning('person')">🖨 Print per persoon</button>
+      </div>
+    </div>
+    <button class="tbtn" onclick="openSett()" title="Instellingen">⚙</button>
   </div>
 </div>
 
 <div class="app">
-  <div class="cap-bar" id="capBar"></div>
   <div class="legend-bar hidden" id="legendBar">
     <span class="lg"><span class="lg-dot" style="background:var(--grn)"></span>route bij bankwerk</span>
     <span class="lg"><span class="lg-dot" style="background:var(--red)"></span>route nog ervoor</span>
@@ -689,7 +700,6 @@ function dayUsed(pid,g){return getPlan(pid,g).reduce((s,j)=>s+(j.hrs||4),0)}
 function render(){
   if(typeof migrateToFase==='function') migrateToFase();
   S.wo=0;
-  renderCap();
   renderGrid();
   if(_floorOpen) renderFloor();
   updateCardModeBtn();
@@ -1072,7 +1082,6 @@ function toggleSP(){
   document.getElementById('sp-btn').classList.toggle('green',_spOpen);
   document.querySelector('.grid-wrap').style.marginRight=_spOpen?'430px':'';
   document.querySelector('.grid-wrap').style.paddingRight='';
-  document.querySelector('.cap-bar').style.marginRight=_spOpen?'430px':'';
   if(_spOpen){S.qSelected=new Set();renderSP();}
 }
 function handleRestore(e){
@@ -1579,6 +1588,9 @@ function chWeek(d){}
 let _showPast=false;
 let _showWeekend=false;
 function toggleShowWeekend(){_showWeekend=!_showWeekend;renderGrid();}
+function toggleMore(e){if(e)e.stopPropagation();var m=document.getElementById('moreMenu');if(m)m.classList.toggle('hidden');}
+function closeMore(){var m=document.getElementById('moreMenu');if(m)m.classList.add('hidden');}
+document.addEventListener('click',function(e){var w=(e.target&&e.target.closest)?e.target.closest('.more-wrap'):null;if(!w)closeMore();});
 let _cardMode=(function(){try{return localStorage.getItem('obx_cardmode')||'full';}catch(e){return 'full';}})();
 function toggleCardMode(){_cardMode=_cardMode==='compact'?'full':'compact';try{localStorage.setItem('obx_cardmode',_cardMode);}catch(e){}updateCardModeBtn();renderGrid();}
 function updateCardModeBtn(){var b=document.getElementById('cardModeBtn');if(b)b.textContent=_cardMode==='compact'?'▭ Detail':'▬ Compact';}
