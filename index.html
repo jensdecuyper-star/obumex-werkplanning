@@ -314,6 +314,16 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .sp-oroute{font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
 .aw-routes{display:flex;flex-wrap:wrap;gap:3px;margin:3px 0}
 .rt-chip{font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;white-space:nowrap}
+.wg-hperson{padding:6px 8px;border-right:.5px solid var(--line);text-align:center;cursor:pointer;background:#fff;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.wg-hperson .wg-pname{font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wg-hperson .wg-prole{font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wg-hperson:hover{background:var(--surf2)}
+.wg-daylabel{padding:8px 10px;border-right:.5px solid var(--line);background:var(--surf2);display:flex;flex-direction:column;justify-content:center;gap:2px}
+.wg-daylabel .dn{font-size:15px;font-weight:800;color:var(--ink);line-height:1}
+.wg-daylabel.today,.wg-daylabel.today .dn{color:#fff}
+.wg-daylabel.today{background:#111}
+.wg-daylabel.wknd{background:repeating-linear-gradient(45deg,#f7f6f3,#f7f6f3 6px,#f0eee9 6px,#f0eee9 12px)}
+.wg-daylabel.holiday{background:var(--amb-l)}
 </style>
 </head>
 <body>
@@ -627,54 +637,63 @@ function render(){
 }
 
 function renderCap(dates){
-  const all=allPeople();
+  const people=S.bw;
   let h='';
-  dates.forEach((d,di)=>{
-    const isW=S.workDays.includes(d.getDay());
-    const cap=all.reduce((s,p)=>s+personHrs(p.id,di),0);
-    const used=all.reduce((s,p)=>s+dayUsed(p.id,di),0);
+  people.forEach(p=>{
+    let cap=0,used=0;
+    dates.forEach((d,di)=>{ cap+=personHrs(p.id,di); used+=dayUsed(p.id,di); });
     const pct=cap>0?Math.min(100,Math.round(used/cap*100)):0;
     const cls=pct>=100?'over':pct>=80?'warn':'ok';
-    h+=`<div class="cap-day">
-      <div class="cap-lbl">${DAYS[d.getDay()]} ${fd(d)}</div>
-      ${isW?`<div class="cap-track"><div class="cap-fill ${cls}" style="width:${pct}%"></div></div><div class="cap-nums">${used}/${cap}u</div>`:'<div style="font-size:8px;color:var(--t3)">vrij</div>'}
-    </div>`;
+    h+=`<div class="cap-day"><div class="cap-lbl" title="${p.name}">${p.name}</div>${cap>0?`<div class="cap-track"><div class="cap-fill ${cls}" style="width:${pct}%"></div></div><div class="cap-nums">${used}/${cap}u</div>`:'<div style="font-size:8px;color:var(--t3)">—</div>'}</div>`;
   });
   document.getElementById('capBar').innerHTML=h;
 }
 
 function renderGrid(dates){
   const today=new Date().toDateString();
-  const pcol='minmax(140px,140px)';
-  const dcols=`repeat(7,minmax(90px,1fr))`;
-  const cols=`${pcol} ${dcols}`;
-
-  let h=`<div class="wg">`;
-  // header
+  const people=S.bw;
+  const lcol='minmax(118px,130px)';
+  const pcols=`repeat(${Math.max(1,people.length)},minmax(150px,1fr))`;
+  const cols=`${lcol} ${pcols}`;
+  const minW=130+people.length*150;
+  let h=`<div class="wg" style="min-width:${minW}px">`;
+  // kop: bankwerkers als kolommen
   h+=`<div class="wg-head" style="display:grid;grid-template-columns:${cols}">`;
-  h+=`<div class="wg-corner">Naam</div>`;
-  dates.forEach((d,i)=>{
-    const iw=S.workDays.includes(d.getDay());
-    const isT=d.toDateString()===today;
-    const ds0=d.toISOString().slice(0,10);
-    const isHol=!!S.holidays[ds0];
-    const hdayCls=isHol?'holiday':isT?'today':!iw?'wknd':'';
-    const holLabel=isHol?'🎉':'';
-    h+=`<div class="wg-hday ${hdayCls}" title="${isHol?'Feestdag — klik om te verwijderen':'Klik voor feestdag'}" onclick="toggleHoliday('${ds0}',${i})" style="cursor:pointer">
-      <span class="dn">${d.getDate()}</span>${DAYS[d.getDay()]}${holLabel}
+  h+=`<div class="wg-corner">Dag</div>`;
+  people.forEach(p=>{
+    h+=`<div class="wg-hperson" onclick="openPeopleForPerson('${p.id}')" oncontextmenu="showPersonCtx(event,'${p.id}')" title="${p.name}">
+      <div class="wg-pname">${p.name}</div>${p.role?`<div class="wg-prole">${p.role}</div>`:''}
     </div>`;
   });
   h+=`</div>`;
-
-  // BW section
-  const bwOpen=!S.collapsed.bw;
-  h+=`<div style="display:grid;grid-template-columns:${cols}"><div class="sec" style="grid-column:1/-1" onclick="toggleSec('bw')">
-    <span class="sec-dot" style="background:var(--bw)"></span>Bankwerk
-    <span class="sec-cnt">${S.bw.length} personen</span>
-    <span class="sec-caret" style="transform:rotate(${bwOpen?0:-90}deg)">▾</span>
-  </div></div>`;
-  if(bwOpen) S.bw.forEach(p=>h+=personRow(p,'bw',dates,cols));
-
+  // elke dag = een rij
+  dates.forEach((d,di)=>{
+    const iw=S.workDays.includes(d.getDay());
+    const ds0=d.toISOString().slice(0,10);
+    const isHol=!!S.holidays[ds0];
+    const isT=d.toDateString()===today;
+    const dayCls=isHol?'holiday':isT?'today':!iw?'wknd':'';
+    h+=`<div class="wg-row" style="display:grid;grid-template-columns:${cols}">`;
+    h+=`<div class="wg-daylabel ${dayCls}" onclick="toggleHoliday('${ds0}',${di})" title="${isHol?'Feestdag — klik om te verwijderen':'Klik voor feestdag'}" style="cursor:pointer">
+      <span class="dn">${d.getDate()}</span> ${DAYS[d.getDay()]}${isHol?' 🎉':''}
+    </div>`;
+    people.forEach(p=>{
+      const jobs=getPlan(p.id,di);
+      const used=dayUsed(p.id,di);
+      const cap=personHrs(p.id,di);
+      const lCls=(cap>0&&used>=cap)?'over':(cap>0&&used>=cap*.85)?'full':'';
+      const ev=S.events[`${p.id}_${ds0}`];
+      const dow=d.getDay();
+      const isPersonOff=(p.offDays||[]).includes(dow)&&S.workDays.includes(dow);
+      h+=`<div class="wg-cell${!iw?' wknd':''}${isPersonOff?' poff':''}${isT?' today-cell':''}${isHol?' holiday-cell':''}"
+        ondragover="dov(event,'bw')" ondragleave="dlv(event)" ondrop="drop(event,'${p.id}',${di},'bw')" oncontextmenu="showCellCtx(event,'${p.id}',${di})" data-type="bw">
+        ${ev?`<div class="ev-badge ${ev.type}">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`:''}
+        ${jobs.map((j,ji)=>chipHTML(j,p.id,di,ji)).join('')}
+        ${used>0?`<div class="cell-load ${lCls}">${used}/${cap}u</div>`:''}
+      </div>`;
+    });
+    h+=`</div>`;
+  });
   h+=`</div>`;
   document.getElementById('planGrid').innerHTML=h;
 }
