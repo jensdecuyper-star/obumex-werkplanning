@@ -340,6 +340,37 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .rdy-ok{background:var(--grn-l);color:var(--grn);border:.5px solid #a7e3c0}
 .rdy-wait{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
 .wg-corner{position:sticky;left:0;z-index:21}
+.aw-compact{padding:4px 7px}
+.awc-top{display:flex;align-items:center;gap:5px}
+.rdy-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
+.awc-sub{font-size:10px;color:var(--t2);margin-top:2px;display:flex;align-items:center;gap:5px}
+.awc-hrs{margin-left:auto;font-weight:700;color:var(--ink)}
+.legend-bar{display:flex;flex-wrap:wrap;gap:6px 16px;padding:7px 14px;background:#1f1f1c;border-bottom:.5px solid #3a3a36;font-size:11px;color:#d8d4ca}
+.legend-bar .lg{display:flex;align-items:center;gap:5px}
+.legend-bar .lg-dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+.legend-bar .lg-bar{width:5px;height:13px;border-radius:2px;display:inline-block}
+.floor-view{position:fixed;inset:0;z-index:900;background:#f6f4ef;color:#1a1a18;overflow:auto}
+body.floor-on{overflow:hidden}
+.fv-head{position:sticky;top:0;display:flex;align-items:center;gap:18px;background:#26261f;color:#f3efe6;padding:14px 22px;z-index:2}
+.fv-title{font-size:24px;font-weight:800}
+.fv-date{font-size:20px;font-weight:600}
+.fv-clock{margin-left:auto;font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.fv-x{background:#c8a96e;border:none;color:#1a1a18;font-weight:700;font-size:15px;padding:9px 16px;border-radius:8px;cursor:pointer}
+.fv-grid{display:grid;gap:14px;padding:18px}
+.fv-col{background:#fff;border:1px solid #e4ded2;border-radius:12px;padding:12px}
+.fv-pname{font-size:22px;font-weight:800;text-align:center;padding-bottom:8px;border-bottom:2px solid #ece6da;margin-bottom:10px}
+.fv-day{margin-bottom:14px}
+.fv-daylbl{font-size:13px;font-weight:700;color:#8a8275;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.fv-today .fv-daylbl{color:#2e9e5b}
+.fv-card{background:#faf8f3;border:1px solid #ece6da;border-radius:8px;padding:8px 11px;margin-bottom:8px}
+.fv-proj{font-size:18px;font-weight:800}
+.fv-klant{font-size:14px;color:#5b5547}
+.fv-fase{font-size:14px;font-weight:600;margin:2px 0}
+.fv-rdy{display:inline-block;font-size:13px;font-weight:700;padding:2px 9px;border-radius:20px;margin-top:4px}
+.fv-rdy.ok{background:#dff3e6;color:#2e9e5b}
+.fv-rdy.wait{background:#fdeccd;color:#b7791f}
+.fv-empty{color:#c4c4c4;font-size:18px;text-align:center;padding:6px}
+.fv-ev{background:#fdeccd;color:#b7791f;font-weight:700;padding:6px 9px;border-radius:6px;font-size:14px;margin-bottom:6px}
 .wg-daylabel{position:sticky;left:0;z-index:6}
 </style>
 </head>
@@ -372,12 +403,23 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
     <button class="tbtn" onclick="printPlanning('all')">🖨 Week</button>
     <button class="tbtn" onclick="printPlanning('person')">🖨 Per persoon</button>
     <button class="tbtn" onclick="openOutput()">📊 Output</button>
+    <button class="tbtn" id="cardModeBtn" onclick="toggleCardMode()">▬ Compact</button>
+    <button class="tbtn" onclick="toggleLegend()">ℹ Legende</button>
+    <button class="tbtn" onclick="openFloor()">📺 Atelier</button>
     <button class="tbtn" onclick="openSett()">⚙</button>
   </div>
 </div>
 
 <div class="app">
   <div class="cap-bar" id="capBar"></div>
+  <div class="legend-bar hidden" id="legendBar">
+    <span class="lg"><span class="lg-dot" style="background:var(--grn)"></span>route bij bankwerk</span>
+    <span class="lg"><span class="lg-dot" style="background:var(--red)"></span>route nog ervoor</span>
+    <span class="lg"><span class="rdy rdy-ok" style="padding:1px 6px">✓ klaar om op te bouwen</span></span>
+    <span class="lg"><span class="lg-bar" style="background:var(--gold)"></span>kleurbalk links = klant / werf</span>
+    <span class="lg">🤒 ziek · 🔧 machine stuk · ⚠️ afwezig</span>
+    <span class="lg"><span class="lg-dot" style="background:#2e9e5b"></span>groene rij = vandaag</span>
+  </div>
   <div class="grid-wrap">
     <div id="planGrid"></div>
   </div>
@@ -647,6 +689,8 @@ function render(){
   S.wo=0;
   renderCap();
   renderGrid();
+  if(_floorOpen) renderFloor();
+  updateCardModeBtn();
   renderSPBadge();
   if(typeof updateHoldBadge==='function')updateHoldBadge();
   if(_spOpen) renderSP();
@@ -755,6 +799,14 @@ function chipHTML(j,pid,g,ji){
   const projTxt=escapeHtml(j.project||j.nr||'');
   const klantLine=j.klant?('<div class="aw-klantline"><span class="klant-dot" style="background:'+werfColor+'"></span>'+escapeHtml(j.klant)+'</div>'):'';
   const faseLine='<div class="aw-fase"><span class="aw-fasenr">'+escapeHtml(j.fase||'')+'</span>'+(j.desc?(' <span class="aw-fasenaam">'+escapeHtml(cleanDesc(j.nr,j.desc))+'</span>'):'')+'</div>';
+  if(_cardMode==='compact'){
+    div.classList.add('aw-compact');
+    const _rd=faseReady(j);
+    const _dot=_rd.total?('<span class="rdy-dot" title="'+(_rd.ready?'klaar om op te bouwen':_rd.atBw+'/'+_rd.total+' bij bankwerk')+'" style="background:'+(_rd.ready?'var(--grn)':'var(--amb)')+'"></span>'):'';
+    div.setAttribute('title',escapeHtml((j.project||j.nr||'')+'  '+(j.klant||'')+'  fase '+(j.fase||'')+'  '+cleanDesc(j.nr,j.desc||'')));
+    div.innerHTML='<div class="aw-body awc"><div class="awc-top">'+_dot+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div><div class="awc-sub">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+escapeHtml(j.klant||'')+'<span class="awc-hrs">'+j.hrs+'u</span></div></div>';
+    return div.outerHTML;
+  }
   div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
@@ -1521,6 +1573,60 @@ function applyPlanSearch(){
 
 function chWeek(d){}
 let _showPast=false;
+let _cardMode=(function(){try{return localStorage.getItem('obx_cardmode')||'full';}catch(e){return 'full';}})();
+function toggleCardMode(){_cardMode=_cardMode==='compact'?'full':'compact';try{localStorage.setItem('obx_cardmode',_cardMode);}catch(e){}updateCardModeBtn();renderGrid();}
+function updateCardModeBtn(){var b=document.getElementById('cardModeBtn');if(b)b.textContent=_cardMode==='compact'?'▭ Detail':'▬ Compact';}
+function toggleLegend(){var l=document.getElementById('legendBar');if(l)l.classList.toggle('hidden');}
+let _floorOpen=false,_floorTimer=null;
+function openFloor(){
+  _floorOpen=true;
+  var el=document.getElementById('floorView');
+  if(!el){el=document.createElement('div');el.id='floorView';el.className='floor-view';document.body.appendChild(el);}
+  el.classList.remove('hidden');
+  document.body.classList.add('floor-on');
+  renderFloor();
+  if(!_floorTimer)_floorTimer=setInterval(function(){if(_floorOpen)renderFloor();},30000);
+}
+function closeFloor(){
+  _floorOpen=false;
+  var el=document.getElementById('floorView'); if(el)el.classList.add('hidden');
+  document.body.classList.remove('floor-on');
+  if(_floorTimer){clearInterval(_floorTimer);_floorTimer=null;}
+}
+function renderFloor(){
+  if(!_floorOpen)return;
+  var people=S.bw||[];
+  var todayG=gToday();
+  var days=[],g=todayG,guard=0;
+  while(days.length<2 && guard++<14){ if(S.workDays.includes(gdate(g).getDay()))days.push(g); g++; }
+  var now=new Date();
+  var DN=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
+  var clk=('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
+  var h='<div class="fv-head"><div class="fv-title">Werkplanning bankwerk</div><div class="fv-date">'+DN[now.getDay()]+' '+now.getDate()+'/'+(now.getMonth()+1)+'</div><div class="fv-clock">'+clk+'</div><button class="fv-x" onclick="closeFloor()">✕ Sluiten</button></div>';
+  h+='<div class="fv-grid" style="grid-template-columns:repeat('+Math.max(1,people.length)+',minmax(0,1fr))">';
+  people.forEach(function(p){
+    h+='<div class="fv-col"><div class="fv-pname">'+escapeHtml(p.name)+'</div>';
+    days.forEach(function(dg,idx){
+      var d=gdate(dg);
+      var lbl=idx===0?'Vandaag':(DN[d.getDay()]+' '+d.getDate()+'/'+(d.getMonth()+1));
+      var ev=S.events[p.id+'_'+d.toISOString().slice(0,10)];
+      h+='<div class="fv-day'+(idx===0?' fv-today':'')+'"><div class="fv-daylbl">'+lbl+'</div>';
+      if(ev){ h+='<div class="fv-ev">'+(ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+escapeHtml(ev.note||'Afwezig'))+'</div>'; }
+      var jobs=getPlan(p.id,dg).filter(function(j){return !j.done;});
+      if(!jobs.length && !ev){ h+='<div class="fv-empty">—</div>'; }
+      jobs.forEach(function(j){
+        var rd=faseReady(j);
+        var rdy=rd.total?(rd.ready?'<span class="fv-rdy ok">✓ klaar</span>':'<span class="fv-rdy wait">'+rd.atBw+'/'+rd.total+' bij bankwerk</span>'):'';
+        var col=kColor(j.klant)||'#ccc';
+        h+='<div class="fv-card" style="border-left:7px solid '+col+'"><div class="fv-proj">'+escapeHtml(j.project||j.nr||'')+'</div>'+(j.klant?'<div class="fv-klant">'+escapeHtml(j.klant)+'</div>':'')+'<div class="fv-fase">'+escapeHtml(j.fase||'')+' '+escapeHtml(cleanDesc(j.nr,j.desc||''))+'</div>'+rdy+'</div>';
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+  });
+  h+='</div>';
+  var fv=document.getElementById('floorView'); if(fv)fv.innerHTML=h;
+}
 function toggleShowPast(){_showPast=!_showPast;renderGrid();}
 function toggleSec(type){S.collapsed[type]=!S.collapsed[type];render();}
 
