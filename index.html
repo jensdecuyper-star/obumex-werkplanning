@@ -1558,7 +1558,10 @@ function importRows(rows){
   if(dlChanges.length)parts.push(dlChanges.length+' deadline gewijzigd');
   if(removed)parts.push(removed+' verwijderd uit wachtrij');
   if(!parts.length)parts.push('Geen wijzigingen');
+  var _cncSnap=(typeof cncSnapshotFromImport==='function')?cncSnapshotFromImport(imp,order):null;
+  if(_cncSnap)parts.push('CNC-backlog '+_cncSnap.items);
   render();
+  if(_cncOpen&&typeof renderCnc==='function')renderCnc();
   if(dlChanges.length>0){ showImportReport(dlChanges,added,removed); } else { toast('Import: '+parts.join(' · ')); }
 }
 
@@ -1701,6 +1704,33 @@ var DEFAULT_CNC_BACKLOG=[
   {m:'6 juni 10:01',items:73,add:5,done:7,rev:4}
 ];
 var _cncOpen=false;
+function cncNowLabel(){var d=new Date();var M=['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];return d.getDate()+' '+M[d.getMonth()]+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
+function cncSnapshotFromImport(imp,order){
+  if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
+  var set={};
+  (order||[]).forEach(function(k){
+    var F=imp[k]; if(!F)return;
+    (F.routes||[]).forEach(function(r){
+      var id=(F.project||'')+'-'+F.fase+'-'+(r.route||r.cel||'');
+      set[id]=true;
+    });
+  });
+  var keys=Object.keys(set);
+  var entry={m:cncNowLabel(),items:keys.length};
+  function base(p){var m=String(p).match(/^(P\d+(?:_\d+)?-\d+)-(\d+)/i);return m?m[1]+'-'+m[2]:p;}
+  var prev=S.cncLastPonrs;
+  if(prev&&prev.length){
+    var oldSet={}; prev.forEach(function(p){oldSet[p]=true;});
+    var added=keys.filter(function(p){return !oldSet[p];});
+    var removed=prev.filter(function(p){return !set[p];});
+    var newBases={}; keys.forEach(function(p){newBases[base(p)]=true;});
+    var rev=removed.filter(function(p){return newBases[base(p)];}).length;
+    entry.add=added.length; entry.done=removed.length; entry.rev=rev;
+  }
+  S.cncLastPonrs=keys;
+  S.cncBacklog.push(entry);
+  return entry;
+}
 function openCnc(){
   _cncOpen=true;
   if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
