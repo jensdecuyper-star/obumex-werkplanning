@@ -708,27 +708,49 @@ let _dhead={},_spans={},_parts={};
 function nextWorkdayG(pid,g){var n=g+1;for(var i=0;i<800;i++,n++){if(personHrs(pid,n)>0)return n;}return g+1;}
 function computeSpans(){
   _dhead={};_spans={};_parts={};
+  // verzamel plaatsingen per persoon
+  var byPid={};
   Object.keys(S.plan||{}).forEach(function(k){
     var ids=S.plan[k]||[]; if(!ids.length)return;
     var parts=k.split('_'); if(parts.length<3)return;
     var wo=parseInt(parts[0],10), di=parseInt(parts[parts.length-1],10);
     if(isNaN(wo)||isNaN(di))return;
-    var pid=parts.slice(1,-1).join('_'), g0=wo*7+di;
-    ids.forEach(function(jid){
-      var j=S.jobs.find(function(x){return x.id===jid;}); if(!j)return;
-      var cap0=personHrs(pid,g0);
-      if(cap0<=0 || (j.hrs||0)<=cap0+0.001) return;
-      _dhead[jid]=cap0;
-      var remaining=Math.round(((j.hrs)-cap0)*2)/2, part=2, ng=g0, guard=0;
-      while(remaining>0.001 && guard++<120){
+    var pid=parts.slice(1,-1).join('_'), g=wo*7+di;
+    (byPid[pid]=byPid[pid]||[]).push({g:g, ids:ids});
+  });
+  Object.keys(byPid).forEach(function(pid){
+    var cells=byPid[pid].sort(function(a,b){return a.g-b.g;});
+    var used={};
+    var placed=[];
+    cells.forEach(function(c){ c.ids.forEach(function(id){ var j=S.jobs.find(function(x){return x.id===id;}); if(j)placed.push({g:c.g,j:j,head:0}); }); });
+    // FASE 1: koppen — elke geplaatste order vult eerst de resterende ruimte op zijn startdag
+    placed.forEach(function(p){
+      var cap=personHrs(pid,p.g);
+      var avail=cap-(used[p.g]||0);
+      var head=Math.min(p.j.hrs||0, Math.max(0,avail));
+      head=Math.round(head*2)/2;
+      p.head=head;
+      used[p.g]=(used[p.g]||0)+head;
+    });
+    // FASE 2: het restant van elke order schuift door naar de eerstvolgende dagen met vrije ruimte
+    placed.forEach(function(p){
+      var remaining=Math.round(((p.j.hrs||0)-p.head)*2)/2;
+      if(remaining<=0.001)return;
+      _dhead[p.j.id]=p.head;
+      var part=2, ng=p.g, guard=0;
+      while(remaining>0.001 && guard++<300){
         ng=nextWorkdayG(pid,ng);
         var cap=personHrs(pid,ng); if(cap<=0)break;
-        var portion=Math.min(remaining,cap); portion=Math.round(portion*2)/2;
+        var avail=cap-(used[ng]||0);
+        if(avail<=0.001)continue;
+        var portion=Math.min(remaining,avail); portion=Math.round(portion*2)/2;
+        if(portion<=0)continue;
         var key=pid+'|'+ng;
-        (_spans[key]=_spans[key]||[]).push({jid:jid,hrs:portion,part:part});
+        (_spans[key]=_spans[key]||[]).push({jid:p.j.id, hrs:portion, part:part});
+        used[ng]=(used[ng]||0)+portion;
         remaining=Math.round((remaining-portion)*2)/2; part++;
       }
-      _parts[jid]=part-1;
+      _parts[p.j.id]=part-1;
     });
   });
 }
