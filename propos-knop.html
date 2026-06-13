@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Propos-backlog knop installeren</title>
+<style>
+:root{--gold:#b3884a;--ink:#1b1a17;--t2:#6a665e;--line:#ece9e3}
+*{box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#fbfaf8;color:var(--ink);margin:0;padding:40px 20px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:680px;margin:0 auto}
+h1{font-size:22px;margin:0 0 6px}
+.sub{color:var(--t2);font-size:14px;margin:0 0 28px}
+.step{display:flex;gap:14px;margin:0 0 22px;align-items:flex-start}
+.num{flex:none;width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step div{font-size:15px;line-height:1.5}
+.btnbox{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;text-align:center;box-shadow:0 4px 14px rgba(28,26,22,.07);margin:10px 0 30px}
+.bm{display:inline-block;background:var(--gold);color:#fff;font-weight:800;font-size:17px;text-decoration:none;padding:14px 26px;border-radius:12px;cursor:grab;box-shadow:0 2px 6px rgba(154,114,53,.35);user-select:none}
+.bm:active{cursor:grabbing}
+.hint{font-size:12px;color:var(--t2);margin-top:14px}
+kbd{background:#f4f2ed;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12px;font-family:inherit}
+details{margin-top:24px;font-size:13px;color:var(--t2)}
+textarea{width:100%;height:120px;font-family:monospace;font-size:11px;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px}
+.ok{background:#eefaf1;border:1px solid #bce7cb;color:#1d8a4c;border-radius:10px;padding:12px 14px;font-size:13px;margin-top:10px}
+</style></head>
+<body><div class="wrap">
+<h1>📈 Propos → Backlog-knop installeren</h1>
+<p class="sub">Eén keer instellen. Daarna update je de CNC- &amp; Bankwerk-backlog met één klik, rechtstreeks vanuit Propos — zonder exporteren of importeren.</p>
+
+<div class="btnbox">
+  <a class="bm" draggable="true" href="javascript:(async()=>{try{var R=localStorage.getItem('jhi-authenticationToken'),t;try{t=JSON.parse(R)}catch(_){t=R}if(t&&t.token)t=t.token;var H={Authorization:'Bearer '+t,Accept:'application/json'};async function g(c){var o=[];for(const k of['in-buffer','in-progress']){var j=await(await fetch('/api/factoryscreen/'+c+'/'+k+'?size=2000',{headers:H})).json();(Array.isArray(j)?j:(j.content||[])).forEach(x=>{if(x&&x.cellErpLineId)o.push(String(x.cellErpLineId).replace(/-\d+$/,''))})}return o}var p={t:Date.now(),cnc:await g(1802),bank:await g(1151)};var e=encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(p)))));window.open('https://jensdecuyper-star.github.io/obumex-werkplanning/index.html#proposSync='+e,'_blank')}catch(e){alert('Propos-sync fout: '+e)}})();">Backlog ← Propos</a>
+  <div class="hint">↑ Sleep deze gouden knop naar je bladwijzerbalk</div>
+</div>
+
+<div class="step"><div class="num">1</div><div><b>Toon je bladwijzerbalk</b> als die er nog niet is: druk <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>.</div></div>
+<div class="step"><div class="num">2</div><div><b>Sleep de gouden knop</b> hierboven naar die balk (klik vasthouden en loslaten op de balk). Er verschijnt een bladwijzer <b>Backlog ← Propos</b>.</div></div>
+<div class="step"><div class="num">3</div><div><b>Gebruiken:</b> ga naar Propos (ingelogd) en klik in je bladwijzerbalk op <b>Backlog ← Propos</b>. De planningstool opent en de backlog wordt automatisch bijgewerkt.</div></div>
+
+<div class="ok">✓ Klaar — vanaf nu is het telkens één klik in Propos.</div>
+
+<details><summary>Lukt slepen niet? Maak de bladwijzer handmatig (klik om de code te kopiëren)</summary>
+<p>Maak een nieuwe bladwijzer, naam <b>Backlog ← Propos</b>, en plak als URL:</p>
+<textarea readonly onclick="this.select()">javascript:(async()=>{try{var R=localStorage.getItem('jhi-authenticationToken'),t;try{t=JSON.parse(R)}catch(_){t=R}if(t&&t.token)t=t.token;var H={Authorization:'Bearer '+t,Accept:'application/json'};async function g(c){var o=[];for(const k of['in-buffer','in-progress']){var j=await(await fetch('/api/factoryscreen/'+c+'/'+k+'?size=2000',{headers:H})).json();(Array.isArray(j)?j:(j.content||[])).forEach(x=>{if(x&&x.cellErpLineId)o.push(String(x.cellErpLineId).replace(/-\d+$/,''))})}return o}var p={t:Date.now(),cnc:await g(1802),bank:await g(1151)};var e=encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(p)))));window.open('https://jensdecuyper-star.github.io/obumex-werkplanning/index.html#proposSync='+e,'_blank')}catch(e){alert('Propos-sync fout: '+e)}})();</textarea></details>
+</div></body></html>
