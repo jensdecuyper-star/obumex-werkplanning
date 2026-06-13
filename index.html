@@ -2360,23 +2360,78 @@ render();
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
 var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs','bankBacklog','bankLastPonrs'];
-var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false;
+var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false,_lastRemote=null;
+function _mEq(a,b){return JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);}
+function _projectKeys(d){var o={};CLOUD_KEYS.forEach(function(k){if(d&&d[k]!==undefined)o[k]=d[k];});return o;}
+function _mergeMap(base,ours,theirs){
+  base=base||{};ours=ours||{};theirs=theirs||{};var keys={},out={};
+  [base,ours,theirs].forEach(function(m){Object.keys(m).forEach(function(k){keys[k]=1;});});
+  Object.keys(keys).forEach(function(k){
+    var v=_mEq(ours[k],base[k])?theirs[k]:ours[k];
+    if(v!==undefined && !(Array.isArray(v)&&v.length===0)) out[k]=v;
+  });
+  return out;
+}
+function _mergeJobs(base,ours,theirs){
+  function byId(a){var m={};(a||[]).forEach(function(j){if(j&&j.id)m[j.id]=j;});return m;}
+  var B=byId(base),O=byId(ours),T=byId(theirs),ids={},out=[];
+  [B,O,T].forEach(function(m){Object.keys(m).forEach(function(k){ids[k]=1;});});
+  Object.keys(ids).forEach(function(id){
+    var v=_mEq(O[id],B[id])?T[id]:O[id];
+    if(v!==undefined) out.push(v);
+  });
+  return out;
+}
+function _mergeAppend(base,ours,theirs,sig){
+  ours=ours||[];theirs=theirs||[];var seen={},out=[];
+  function add(arr){arr.forEach(function(e){var k=sig(e);if(!seen[k]){seen[k]=1;out.push(e);}});}
+  add(theirs); add(ours);
+  return out;
+}
+function threeWayMerge(base,ours,theirs){
+  base=base||{};ours=ours||{};theirs=theirs||{};
+  var m={};
+  m.plan=_mergeMap(base.plan,ours.plan,theirs.plan);
+  m.jobs=_mergeJobs(base.jobs,ours.jobs,theirs.jobs);
+  m.events=_mergeMap(base.events,ours.events,theirs.events);
+  m.holidays=_mergeMap(base.holidays,ours.holidays,theirs.holidays);
+  var blSig=function(e){return e.m+'|'+e.items+'|'+(e.add!=null?e.add:'')+'|'+(e.done!=null?e.done:'');};
+  m.history=_mergeAppend(base.history,ours.history,theirs.history,function(e){return JSON.stringify(e);});
+  m.cncBacklog=_mergeAppend(base.cncBacklog,ours.cncBacklog,theirs.cncBacklog,blSig);
+  m.bankBacklog=_mergeAppend(base.bankBacklog,ours.bankBacklog,theirs.bankBacklog,blSig);
+  ['bw','cnc','dayHrs','workDays','cncLastPonrs','bankLastPonrs'].forEach(function(k){
+    m[k]=_mEq(ours[k],base[k])?(theirs[k]!==undefined?theirs[k]:ours[k]):ours[k];
+  });
+  return m;
+}
 function cloudSave(){
   if(!_docRef||_applyingRemote||!_cloudReady)return;
   _pendingWrite=true;
   clearTimeout(_cloudTimer);
   _cloudTimer=setTimeout(function(){
-    var o={_ts:Date.now()};
-    CLOUD_KEYS.forEach(function(k){o[k]=S[k];});
-    _lastAppliedTs=o._ts;
-    _docRef.set(o).then(function(){_pendingWrite=false;})
-      .catch(function(e){_pendingWrite=false;console.warn('Cloud opslaan mislukt',e);});
+    var ours={};CLOUD_KEYS.forEach(function(k){ours[k]=S[k];});
+    _docRef.get().then(function(snap){
+      var theirs=snap.exists?_projectKeys(snap.data()):{};
+      var merged=threeWayMerge(_lastRemote||theirs,ours,theirs);
+      merged._ts=Date.now();
+      _lastAppliedTs=merged._ts;
+      return _docRef.set(merged).then(function(){
+        _lastRemote=JSON.parse(JSON.stringify(_projectKeys(merged)));
+        _applyingRemote=true;
+        CLOUD_KEYS.forEach(function(k){if(merged[k]!==undefined)S[k]=merged[k];});
+        if(!(S.qSelected instanceof Set))S.qSelected=new Set();
+        if(typeof render==='function')render();
+        _applyingRemote=false;
+        _pendingWrite=false;
+      });
+    }).catch(function(e){_pendingWrite=false;console.warn('Cloud opslaan mislukt',e);});
   },500);
 }
 function applyRemote(d){
   _applyingRemote=true;
   CLOUD_KEYS.forEach(function(k){if(d[k]!==undefined)S[k]=d[k];});
   if(!(S.qSelected instanceof Set))S.qSelected=new Set();
+  _lastRemote=JSON.parse(JSON.stringify(_projectKeys(d)));
   try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}
   render();
   _applyingRemote=false;
