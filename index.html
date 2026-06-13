@@ -445,7 +445,8 @@ body.floor-on{overflow:hidden}
     <span class="vsep"></span>
     <button class="tbtn" id="cardModeBtn" onclick="toggleCardMode()">▬ Compact</button>
     <button class="tbtn" onclick="openFloor()">📺 Atelier</button>
-    <button class="tbtn" onclick="openCnc()">📈 CNC-backlog</button>
+    <button class="tbtn" onclick="openBacklog('cnc')">📈 CNC-backlog</button>
+    <button class="tbtn" onclick="openBacklog('bank')">📈 Bankwerk-backlog</button>
     <span class="vsep"></span>
     <div class="more-wrap">
       <button class="tbtn" onclick="toggleMore(event)">⋯ Meer</button>
@@ -831,6 +832,7 @@ function render(){
   if(typeof migrateMergeOldSplits==='function') migrateMergeOldSplits();
   S.wo=0;
   if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
+  if(!S.bankBacklog)S.bankBacklog=[];
   computeSpans();
   renderGrid();
   if(_floorOpen) renderFloor();
@@ -1558,10 +1560,12 @@ function importRows(rows){
   if(dlChanges.length)parts.push(dlChanges.length+' deadline gewijzigd');
   if(removed)parts.push(removed+' verwijderd uit wachtrij');
   if(!parts.length)parts.push('Geen wijzigingen');
-  var _cncSnap=(typeof cncSnapshotFromImport==='function')?cncSnapshotFromImport(imp,order):null;
-  if(_cncSnap)parts.push('CNC-backlog '+_cncSnap.items);
+  var _cncSnap=(typeof backlogSnapshotFromImport==='function')?backlogSnapshotFromImport('cnc',imp,order):null;
+  var _bankSnap=(typeof backlogSnapshotFromImport==='function')?backlogSnapshotFromImport('bank',imp,order):null;
+  if(_cncSnap)parts.push('CNC '+_cncSnap.items);
+  if(_bankSnap)parts.push('Bankwerk '+_bankSnap.items);
   render();
-  if(_cncOpen&&typeof renderCnc==='function')renderCnc();
+  if(_blOpen&&typeof renderBacklog==='function')renderBacklog();
   if(dlChanges.length>0){ showImportReport(dlChanges,added,removed); } else { toast('Import: '+parts.join(' · ')); }
 }
 
@@ -1703,52 +1707,26 @@ var DEFAULT_CNC_BACKLOG=[
   {m:'3 juni 18:55',items:75,add:1,done:2,rev:0},
   {m:'6 juni 10:01',items:73,add:5,done:7,rev:4}
 ];
-var _cncOpen=false;
+var BACKLOGS={
+  cnc:{key:'cncBacklog',lastKey:'cncLastPonrs',cel:'cnc',label:'CNC',title:'CNC-backlog evolutie'},
+  bank:{key:'bankBacklog',lastKey:'bankLastPonrs',cel:'bankwerk',label:'Bankwerk',title:'Bankwerk-backlog evolutie'}
+};
+var _blOpen=null;
 function cncNowLabel(){var d=new Date();var M=['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];return d.getDate()+' '+M[d.getMonth()]+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
-function cncSnapshotFromImport(imp,order){
-  if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
-  var set={};
-  (order||[]).forEach(function(k){
-    var F=imp[k]; if(!F)return;
-    (F.routes||[]).forEach(function(r){
-      if(((r.cel||'').trim().toLowerCase())!=='cnc')return;
-      var id=(F.project||'')+'-'+F.fase+'-'+(r.route||'');
-      set[id]=true;
-    });
-  });
-  var keys=Object.keys(set);
-  var entry={m:cncNowLabel(),items:keys.length};
-  function base(p){var m=String(p).match(/^(P\d+(?:_\d+)?-\d+)-(\d+)/i);return m?m[1]+'-'+m[2]:p;}
-  var prev=S.cncLastPonrs;
-  if(prev&&prev.length){
-    var oldSet={}; prev.forEach(function(p){oldSet[p]=true;});
-    var added=keys.filter(function(p){return !oldSet[p];});
-    var removed=prev.filter(function(p){return !set[p];});
-    var newBases={}; keys.forEach(function(p){newBases[base(p)]=true;});
-    var rev=removed.filter(function(p){return newBases[base(p)];}).length;
-    entry.add=added.length; entry.done=removed.length; entry.rev=rev;
-  }
-  S.cncLastPonrs=keys;
-  S.cncBacklog.push(entry);
-  return entry;
-}
-function openCnc(){
-  _cncOpen=true;
-  if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
-  var el=document.getElementById('cncView');
-  if(!el){el=document.createElement('div');el.id='cncView';el.className='cnc-view';document.body.appendChild(el);}
+function cncShortDate(m){ return String(m||'').replace(/\s+\d{1,2}:\d{2}.*$/,''); }
+function blData(kind){var cfg=BACKLOGS[kind];if(!S[cfg.key])S[cfg.key]=(kind==='cnc'?JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG)):[]);return S[cfg.key];}
+function openBacklog(kind){
+  _blOpen=kind;
+  blData(kind);
+  var el=document.getElementById('backlogView');
+  if(!el){el=document.createElement('div');el.id='backlogView';el.className='cnc-view';document.body.appendChild(el);}
   el.classList.remove('hidden');
   document.body.classList.add('floor-on');
-  renderCnc();
+  renderBacklog();
 }
-function closeCnc(){
-  _cncOpen=false;
-  var el=document.getElementById('cncView'); if(el)el.classList.add('hidden');
-  document.body.classList.remove('floor-on');
-}
-function cncShortDate(m){ return String(m||'').replace(/\s+\d{1,2}:\d{2}.*$/,''); }
-function cncChartSVG(data){
-  if(!data.length) return '<div class="cnc-empty">Nog geen meetpunten.</div>';
+function closeBacklog(){_blOpen=null;var el=document.getElementById('backlogView');if(el)el.classList.add('hidden');document.body.classList.remove('floor-on');}
+function backlogChartSVG(data){
+  if(!data.length) return '<div class="cnc-empty">Nog geen meetpunten — wordt aangevuld bij elke import.</div>';
   var W=940,H=300,pL=46,pR=20,pT=20,pB=58;
   var items=data.map(function(d){return d.items||0;});
   var maxV=Math.max.apply(null,items), minV=Math.min.apply(null,items);
@@ -1759,11 +1737,7 @@ function cncChartSVG(data){
   var y=function(v){return pT+(top-v)/(top-bot)*(H-pT-pB);};
   var g='';
   var steps=5;
-  for(var st=0;st<=steps;st++){
-    var val=bot+(top-bot)*st/steps, yy=y(val);
-    g+='<line x1="'+pL+'" y1="'+yy+'" x2="'+(W-pR)+'" y2="'+yy+'" stroke="#e6e3dd" stroke-width="1"/>';
-    g+='<text x="'+(pL-7)+'" y="'+(yy+3.5)+'" text-anchor="end" font-size="10" fill="#9c9890">'+Math.round(val)+'</text>';
-  }
+  for(var st=0;st<=steps;st++){var val=bot+(top-bot)*st/steps, yy=y(val);g+='<line x1="'+pL+'" y1="'+yy+'" x2="'+(W-pR)+'" y2="'+yy+'" stroke="#e6e3dd" stroke-width="1"/>';g+='<text x="'+(pL-7)+'" y="'+(yy+3.5)+'" text-anchor="end" font-size="10" fill="#9c9890">'+Math.round(val)+'</text>';}
   var pts=data.map(function(d,i){return x(i)+','+y(d.items);});
   var area='M'+x(0)+','+y(bot)+' L'+pts.join(' L')+' L'+x(n-1)+','+y(bot)+' Z';
   g+='<path d="'+area+'" fill="url(#cncgrad)"/>';
@@ -1772,14 +1746,14 @@ function cncChartSVG(data){
     var add=(d.add!=null?'+'+d.add:''), done=(d.done!=null?'-'+d.done:'');
     g+='<circle cx="'+x(i)+'" cy="'+y(d.items)+'" r="4" fill="#fff" stroke="#111" stroke-width="2"><title>'+escapeHtml(d.m)+': '+d.items+' items'+(d.add!=null?'  ('+add+' bij / '+done+' af)':'')+'</title></circle>';
     g+='<text x="'+x(i)+'" y="'+(y(d.items)-10)+'" text-anchor="middle" font-size="10.5" font-weight="800" fill="#111">'+d.items+'</text>';
-    var lbl=cncShortDate(d.m);
-    g+='<text x="'+x(i)+'" y="'+(H-pB+20)+'" text-anchor="end" font-size="9.5" fill="#5a5855" transform="rotate(-32 '+x(i)+' '+(H-pB+20)+')">'+escapeHtml(lbl)+'</text>';
+    g+='<text x="'+x(i)+'" y="'+(H-pB+20)+'" text-anchor="end" font-size="9.5" fill="#5a5855" transform="rotate(-32 '+x(i)+' '+(H-pB+20)+')">'+escapeHtml(cncShortDate(d.m))+'</text>';
   });
   return '<svg viewBox="0 0 '+W+' '+H+'" class="cnc-svg" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="cncgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8a96e" stop-opacity="0.32"/><stop offset="1" stop-color="#c8a96e" stop-opacity="0.03"/></linearGradient></defs>'+g+'</svg>';
 }
-function renderCnc(){
-  if(!_cncOpen)return;
-  var data=S.cncBacklog||[];
+function renderBacklog(){
+  if(!_blOpen)return;
+  var kind=_blOpen, cfg=BACKLOGS[kind];
+  var data=blData(kind);
   var cur=data.length?data[data.length-1].items:0;
   var start=data.length?data[0].items:0;
   var peak=data.length?Math.max.apply(null,data.map(function(d){return d.items;})):0;
@@ -1789,59 +1763,38 @@ function renderCnc(){
   var net=cur-start;
   function stat(lbl,val,cls){return '<div class="cnc-stat"><div class="cnc-stat-v '+(cls||'')+'">'+val+'</div><div class="cnc-stat-l">'+lbl+'</div></div>';}
   var h='';
-  h+='<div class="cnc-head"><div class="cnc-title">📈 CNC-backlog evolutie</div><div class="cnc-sub">'+(data.length?escapeHtml(cncShortDate(data[0].m))+' → '+escapeHtml(cncShortDate(data[data.length-1].m))+'  ·  '+data.length+' meetpunten':'')+'</div><button class="cnc-x" onclick="closeCnc()">✕ Sluiten</button></div>';
+  h+='<div class="cnc-head"><div class="cnc-title">📈 '+cfg.title+'</div><div class="cnc-sub">'+(data.length?escapeHtml(cncShortDate(data[0].m))+' → '+escapeHtml(cncShortDate(data[data.length-1].m))+'  ·  '+data.length+' meetpunten':'Nog geen meetpunten — wordt aangevuld bij elke import')+'</div><button class="cnc-x" onclick="closeBacklog()">✕ Sluiten</button></div>';
   h+='<div class="cnc-body">';
-  h+='<div class="cnc-stats">'
-    +stat('Huidige backlog',cur)
-    +stat('Piek',peak)
-    +stat('Netto sinds start',(net>0?'+':'')+net,(net>0?'neg':(net<0?'pos':'')))
-    +stat('Totaal afgewerkt',totDone,'pos')
-    +stat('Totaal bijgekomen',totAdd,'neg')
-    +stat('wv. revisie',totRev,'amb')
-    +'</div>';
-  h+='<div class="cnc-card"><div class="cnc-card-h">Evolutie aantal items</div>'+cncChartSVG(data)+'</div>';
-  // add form
-  h+='<div class="cnc-card"><div class="cnc-card-h">Nieuw meetpunt toevoegen</div><div class="cnc-add">'
-    +'<input id="cnc-m" placeholder="bv. 10 juni 08:00">'
-    +'<input id="cnc-items" type="number" placeholder="items">'
-    +'<input id="cnc-add" type="number" placeholder="bij">'
-    +'<input id="cnc-done" type="number" placeholder="afgewerkt">'
-    +'<input id="cnc-rev" type="number" placeholder="wv revisie">'
-    +'<button class="cnc-addbtn" onclick="addCncEntry()">+ Toevoegen</button></div></div>';
-  // table
+  h+='<div class="cnc-stats">'+stat('Huidige backlog',cur)+stat('Piek',peak)+stat('Netto sinds start',(net>0?'+':'')+net,(net>0?'neg':(net<0?'pos':'')))+stat('Totaal afgewerkt',totDone,'pos')+stat('Totaal bijgekomen',totAdd,'neg')+stat('wv. revisie',totRev,'amb')+'</div>';
+  h+='<div class="cnc-card"><div class="cnc-card-h">Evolutie aantal items</div>'+backlogChartSVG(data)+'</div>';
   h+='<div class="cnc-card"><div class="cnc-card-h">Meetpunten</div><div class="cnc-table-wrap"><table class="cnc-table"><thead><tr><th>Trekkingsmoment</th><th>Items</th><th>Bij</th><th>Afgewerkt</th><th>wv revisie</th><th>Netto</th><th></th></tr></thead><tbody>';
-  data.forEach(function(d,i){
-    var prev=i>0?data[i-1].items:d.items;
-    var nt=d.items-prev;
-    h+='<tr><td>'+escapeHtml(d.m)+'</td><td class="num">'+d.items+'</td><td class="num">'+(d.add!=null?'+'+d.add:'–')+'</td><td class="num">'+(d.done!=null?d.done:'–')+'</td><td class="num">'+(d.rev!=null?d.rev:'–')+'</td><td class="num '+(nt>0?'neg':(nt<0?'pos':''))+'">'+(i===0?'–':(nt>0?'+':'')+nt)+'</td><td><span class="cnc-del" onclick="delCncEntry('+i+')" title="Verwijderen">✕</span></td></tr>';
-  });
+  data.forEach(function(d,i){var prev=i>0?data[i-1].items:d.items;var nt=d.items-prev;h+='<tr><td>'+escapeHtml(d.m)+'</td><td class="num">'+d.items+'</td><td class="num">'+(d.add!=null?'+'+d.add:'–')+'</td><td class="num">'+(d.done!=null?d.done:'–')+'</td><td class="num">'+(d.rev!=null?d.rev:'–')+'</td><td class="num '+(nt>0?'neg':(nt<0?'pos':''))+'">'+(i===0?'–':(nt>0?'+':'')+nt)+'</td><td><span class="cnc-del" onclick="delBacklogEntry(\''+kind+'\','+i+')" title="Verwijderen">✕</span></td></tr>';});
   h+='</tbody></table></div></div>';
-  h+='<div class="cnc-note">Backlog = openstaande CNC-items (per PONr, incl. revisie -Rx). “Afgewerkt” = uit de lijst verdwenen; “wv. revisie” = teruggekeerd met nieuw revisienummer. Bron: cel-exports + PROGRAMMERING CNC.</div>';
+  h+='<div class="cnc-note">Wordt automatisch aangevuld bij elke import (telt de unieke PONr in cel '+cfg.label+'). “Afgewerkt” = uit de lijst verdwenen; “wv. revisie” = teruggekeerd met een nieuw revisienummer.</div>';
   h+='</div>';
-  document.getElementById('cncView').innerHTML=h;
+  document.getElementById('backlogView').innerHTML=h;
 }
-function addCncEntry(){
+function delBacklogEntry(kind,i){
   if(window.__readonly){toast('Alleen-lezen modus');return;}
-  var m=(document.getElementById('cnc-m').value||'').trim();
-  var items=parseFloat(document.getElementById('cnc-items').value);
-  if(!m||isNaN(items)){toast('Vul minstens moment + items in');return;}
-  var add=document.getElementById('cnc-add').value, done=document.getElementById('cnc-done').value, rev=document.getElementById('cnc-rev').value;
-  var e={m:m,items:items};
-  if(add!=='')e.add=parseFloat(add); if(done!=='')e.done=parseFloat(done); if(rev!=='')e.rev=parseFloat(rev);
-  if(!S.cncBacklog)S.cncBacklog=[];
-  S.cncBacklog.push(e);
-  save();
-  renderCnc();
-  toast('Meetpunt toegevoegd');
-}
-function delCncEntry(i){
-  if(window.__readonly){toast('Alleen-lezen modus');return;}
-  if(!S.cncBacklog||!S.cncBacklog[i])return;
+  var arr=S[BACKLOGS[kind].key]; if(!arr||!arr[i])return;
   if(!confirm('Meetpunt verwijderen?'))return;
-  S.cncBacklog.splice(i,1);
-  save();
-  renderCnc();
+  arr.splice(i,1); save(); renderBacklog();
 }
+function backlogSnapshotFromImport(kind,imp,order){
+  var cfg=BACKLOGS[kind];
+  if(!S[cfg.key])S[cfg.key]=(kind==='cnc'?JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG)):[]);
+  var set={};
+  (order||[]).forEach(function(k){var F=imp[k];if(!F)return;(F.routes||[]).forEach(function(r){if(((r.cel||'').trim().toLowerCase())!==cfg.cel)return;set[(F.project||'')+'-'+F.fase+'-'+(r.route||'')]=true;});});
+  var keys=Object.keys(set);
+  var entry={m:cncNowLabel(),items:keys.length};
+  function base(p){var m=String(p).match(/^(P\d+(?:_\d+)?-\d+)-(\d+)/i);return m?m[1]+'-'+m[2]:p;}
+  var prev=S[cfg.lastKey];
+  if(prev&&prev.length){var oldSet={};prev.forEach(function(p){oldSet[p]=true;});var added=keys.filter(function(p){return !oldSet[p];});var removed=prev.filter(function(p){return !set[p];});var nb={};keys.forEach(function(p){nb[base(p)]=true;});var rev=removed.filter(function(p){return nb[base(p)];}).length;entry.add=added.length;entry.done=removed.length;entry.rev=rev;}
+  S[cfg.lastKey]=keys;
+  S[cfg.key].push(entry);
+  return entry;
+}
+
 function renderFloor(){
   if(!_floorOpen)return;
   var people=S.bw||[];
@@ -2387,7 +2340,7 @@ render();
 // ========================================
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
-var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs'];
+var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs','bankBacklog','bankLastPonrs'];
 var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false;
 function cloudSave(){
   if(!_docRef||_applyingRemote||!_cloudReady)return;
