@@ -351,6 +351,16 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .rdy-ok{background:var(--grn-l);color:var(--grn);border:.5px solid #a7e3c0}
 .rdy-wait{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
 .wg-corner{position:sticky;left:0;z-index:21;display:flex;flex-direction:column;gap:2px}
+.aw.ins-before{box-shadow:0 -3px 0 0 var(--gold)}
+.sync-status{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap;transition:all .2s;letter-spacing:.01em}
+.sync-status.saving{background:rgba(180,83,9,.22);color:#f0b56b}
+.sync-status.saved{background:rgba(21,128,61,.22);color:#7ee2a8}
+.sync-status.idle{background:rgba(255,255,255,.07);color:#9c9890}
+.sync-status.error{background:rgba(185,28,28,.3);color:#ff9b9b}
+.wg-cell.drop-ok,.wg-cell.drop-ok.bw{background:rgba(200,169,110,.14)!important;outline:2px solid var(--gold)!important;outline-offset:-2px;border-radius:7px}
+.wg-cell.drop-no{background:rgba(185,28,28,.06)!important;outline:2px dashed rgba(185,28,28,.45)!important;outline-offset:-2px;border-radius:7px}
+body.dragging .aw{cursor:grabbing}
+body.dragging .wg-cell:not(.drop-ok):not(.drop-no){opacity:.92}
 .aw-dl{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:999px;margin:2px 0;white-space:nowrap}
 .aw-dl.dl-ok{background:var(--surf2);color:var(--t2)}
 .aw-dl.dl-warn{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
@@ -428,8 +438,9 @@ body.floor-on{overflow:hidden}
   <span class="logo">Obumex</span>
   <span class="vsep"></span>
   <div class="top-nav">
-    <button class="nav-btn" onclick="goToday()">⌖ Vandaag</button>
+    <button class="nav-btn" onclick="goToday()" title="Spring naar vandaag">⌖ Vandaag</button>
   </div>
+  <span id="syncStatus" class="sync-status idle" title="Opslagstatus"></span>
   <div style="position:relative;margin:0 8px">
     <input id="planSearch" placeholder="Zoek in planning… (Ctrl+F)" autocomplete="off"
       style="padding:5px 30px 5px 10px;border:.5px solid #444;border-radius:6px;background:#1a1a18;color:#e0ddd6;font-size:11px;width:200px;outline:none;font-family:inherit"
@@ -439,15 +450,15 @@ body.floor-on{overflow:hidden}
     <span id="planSearchClear" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#666;cursor:pointer;display:none;font-size:14px" onclick="clearPlanSearch()">×</span>
   </div>
   <div class="top-r">
-    <button class="tbtn" onclick="toggleSP()" id="sp-btn">📋 Wachtrij <span class="badge-cnt hidden" id="sp-cnt">0</span></button>
-    <button class="tbtn" onclick="openHold()" id="hold-btn">⏸ On hold <span class="badge-cnt hidden" id="hold-cnt">0</span></button>
-    <button class="tbtn accent" onclick="openAdd()">+ Order</button>
+    <button class="tbtn" onclick="toggleSP()" id="sp-btn" title="Te plannen orders (wachtrij)">📋 Wachtrij <span class="badge-cnt hidden" id="sp-cnt">0</span></button>
+    <button class="tbtn" onclick="openHold()" id="hold-btn" title="Geblokkeerde / on-hold orders">⏸ On hold <span class="badge-cnt hidden" id="hold-cnt">0</span></button>
+    <button class="tbtn accent" onclick="openAdd()" title="Nieuwe order toevoegen">+ Order</button>
     <label class="tbtn" style="cursor:pointer">↑ Import
       <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImport(event)">
     </label>
     <span class="vsep"></span>
-    <button class="tbtn" id="cardModeBtn" onclick="toggleCardMode()">▬ Compact</button>
-    <button class="tbtn" onclick="openFloor()">📺 Atelier</button>
+    <button class="tbtn" id="cardModeBtn" onclick="toggleCardMode()" title="Wissel tussen compacte en detailweergave">▬ Compact</button>
+    <button class="tbtn" onclick="openFloor()" title="Groot, leesbaar scherm voor het atelier">📺 Atelier</button>
     <button class="tbtn" onclick="openBacklog('cnc')">📈 CNC-backlog</button>
     <button class="tbtn" onclick="openBacklog('bank')">📈 Bankwerk-backlog</button>
     <span class="vsep"></span>
@@ -463,9 +474,23 @@ body.floor-on{overflow:hidden}
         <button class="more-item" onclick="closeMore();printPlanning('person')">🖨 Print per persoon</button>
       </div>
     </div>
+    <button class="tbtn" onclick="openHelp()" title="Help & uitleg">?</button>
     <button class="tbtn" onclick="openSett()" title="Instellingen">⚙</button>
   </div>
 </div>
+
+<div class="ov hidden" id="helpModal"><div class="modal wide">
+  <div class="mh">Help &amp; uitleg <button class="mx" onclick="closeHelp()">×</button></div>
+  <div style="font-size:12.5px;line-height:1.7;max-height:68vh;overflow:auto">
+    <p><b>Plannen</b> — sleep een order uit de wachtrij naar een bankwerker op een dag. De goudkleurige invoeglijn toont waar hij landt. <b>Klik</b> op een kaart voor alle details; <b>rechtsklik</b> voor opties (afgerond, blokkeren, week verschuiven, terug naar wachtrij).</p>
+    <p><b>Routes:</b> <span style="color:var(--grn);font-weight:700">✓ groen</span> = route staat al bij bankwerk &middot; <span style="color:var(--red);font-weight:700">↑ rood</span> = zit nog een stap ervoor. <b>✓ klaar om op te bouwen</b> = álle routes bij bankwerk.</p>
+    <p><b>Deadline:</b> 📅 met datum — amber = binnen 5 dagen, rood “⚠ na deadline” = ná de leverdatum ingepland.</p>
+    <p><b>✎ herzien</b> = de order wijzigde bij de laatste import; klik op het label om te bevestigen.</p>
+    <p><b>Knoppen:</b> 📋 Wachtrij &middot; ⏸ On hold &middot; + Order &middot; ↑ Import (Propos) &middot; ▬ Compact/Detail &middot; 📺 Atelier &middot; 📈 CNC-/Bankwerk-backlog &middot; ⋯ Meer (mensen, output, legende, export, print).</p>
+    <p><b>Opslaan:</b> alles wordt automatisch en gedeeld bewaard — het statusje bovenaan toont “bewaren…/opgeslagen”. Gelijktijdige wijzigingen van collega’s worden samengevoegd.</p>
+  </div>
+  <div class="mact"><button class="mbtn ok" onclick="closeHelp()">Sluiten</button></div>
+</div></div>
 
 <div class="app">
   <div class="legend-bar hidden" id="legendBar">
@@ -964,7 +989,7 @@ function chipHTML(j,pid,g,ji){
   }
   const werfColor=kColor(j.klant);
   div.className='aw '+jtype(j)+(j.blocked?' blocked':'')+(j.groupId?' is-split':'');
-  if(werfColor&&!j.blocked){div.style.borderLeft='4px solid '+werfColor;div.style.background=werfColor+'40';}
+  if(werfColor&&!j.blocked){div.style.borderLeft='4px solid '+werfColor;}
   div.draggable=!j.blocked;
   div.setAttribute('ondragstart',"ds(event,'"+j.id+"','"+pkey(pid,g)+"')");
   div.setAttribute('ondragend','de()');
@@ -986,7 +1011,10 @@ function chipHTML(j,pid,g,ji){
     div.classList.add('aw-compact');
     const _rd=faseReady(j);
     const _dot=_rd.total?('<span class="rdy-dot" title="'+(_rd.ready?'klaar om op te bouwen':_rd.atBw+'/'+_rd.total+' bij bankwerk')+'" style="background:'+(_rd.ready?'var(--grn)':'var(--amb)')+'"></span>'):'';
-    div.setAttribute('title',escapeHtml((j.project||j.nr||'')+'  '+(j.klant||'')+'  fase '+(j.fase||'')+'  '+cleanDesc(j.nr,j.desc||'')));
+    var _rd2=faseReady(j);
+    var _ttl=(j.project||j.nr||'')+' · '+(j.klant||'')+'\nFase '+(j.fase||'')+'  '+cleanDesc(j.nr,j.desc||'')+'\nRoutes: '+(_rd2.total?(_rd2.atBw+'/'+_rd2.total+' bij bankwerk'):'\u2014')+(j.deadline?('\nDeadline: '+j.deadline):'')+'\n'+j.hrs+'u \u2014 klik voor details';
+    div.setAttribute('title',_ttl);
+    div.setAttribute('onclick',"if(!(event.target.closest&&event.target.closest('.aw-del'))){openDetail('"+j.id+"')}");
     var _cw=(dlAfter(j,g)?'<span class="awc-warn" title="Na deadline">⚠</span>':'')+(j.revised?'<span class="awc-warn" title="Herzien">✎</span>':'');
     div.innerHTML='<div class="aw-body awc"><div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div><div class="awc-sub">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+escapeHtml(j.klant||'')+spanBadgeC+'<span class="awc-hrs">'+j.hrs+'u</span></div></div>';
     return div.outerHTML;
@@ -1016,12 +1044,12 @@ function ds(e,id,from){
 }
 function de(){
   document.body.classList.remove('dragging');
-  document.querySelectorAll('.drop-ok,.drop-no').forEach(el=>el.classList.remove('drop-ok','bw','drop-no'));
+  document.querySelectorAll('.drop-ok,.drop-no,.ins-before').forEach(el=>el.classList.remove('drop-ok','bw','drop-no','ins-before'));
   document.getElementById('_dg')?.remove();
   _ins=null;
 }
-function awov(e,pid,g,ji){e.preventDefault();e.stopPropagation();_ins={pid,g,ji};}
-function awlv(e){_ins=null;}
+function awov(e,pid,g,ji){e.preventDefault();e.stopPropagation();_ins={pid,g,ji};document.querySelectorAll('.aw.ins-before').forEach(function(el){el.classList.remove('ins-before');});if(e.currentTarget&&e.currentTarget.classList)e.currentTarget.classList.add('ins-before');}
+function awlv(e){_ins=null;if(e&&e.currentTarget&&e.currentTarget.classList)e.currentTarget.classList.remove('ins-before');}
 function dov(e,ptype){
   e.preventDefault();
   const j=S.jobs.find(x=>x.id===_dragId);
@@ -1665,10 +1693,20 @@ function toggleShowWeekend(){_showWeekend=!_showWeekend;renderGrid();}
 function toggleMore(e){if(e)e.stopPropagation();var m=document.getElementById('moreMenu');if(m)m.classList.toggle('hidden');}
 function closeMore(){var m=document.getElementById('moreMenu');if(m)m.classList.add('hidden');}
 document.addEventListener('click',function(e){var w=(e.target&&e.target.closest)?e.target.closest('.more-wrap'):null;if(!w)closeMore();});
-let _cardMode=(function(){try{return localStorage.getItem('obx_cardmode')||'full';}catch(e){return 'full';}})();
-function toggleCardMode(){_cardMode=_cardMode==='compact'?'full':'compact';try{localStorage.setItem('obx_cardmode',_cardMode);}catch(e){}updateCardModeBtn();renderGrid();}
+let _cardMode=(function(){try{return localStorage.getItem('obx_cardmode2')||'compact';}catch(e){return 'compact';}})();
+function toggleCardMode(){_cardMode=_cardMode==='compact'?'full':'compact';try{localStorage.setItem('obx_cardmode2',_cardMode);}catch(e){}updateCardModeBtn();renderGrid();}
 function updateCardModeBtn(){var b=document.getElementById('cardModeBtn');if(b)b.textContent=_cardMode==='compact'?'▭ Detail':'▬ Compact';}
 function toggleLegend(){var l=document.getElementById('legendBar');if(l)l.classList.toggle('hidden');}
+function openHelp(){var m=document.getElementById('helpModal');if(m)m.classList.remove('hidden');}
+function closeHelp(){var m=document.getElementById('helpModal');if(m)m.classList.add('hidden');}
+var _syncTimer=null;
+function updateSync(state){
+  var el=document.getElementById('syncStatus'); if(!el)return;
+  clearTimeout(_syncTimer);
+  if(state==='saving'){el.textContent='● bewaren…';el.className='sync-status saving';}
+  else if(state==='saved'){el.textContent='✓ opgeslagen';el.className='sync-status saved';_syncTimer=setTimeout(function(){el.textContent='✓ bewaard';el.className='sync-status idle';},2500);}
+  else if(state==='error'){el.textContent='⚠ opslaan mislukt';el.className='sync-status error';}
+}
 let _floorOpen=false,_floorTimer=null;
 function openFloor(){
   _floorOpen=true;
@@ -2408,6 +2446,7 @@ function cloudSave(){
   if(!_docRef||_applyingRemote||!_cloudReady)return;
   _pendingWrite=true;
   clearTimeout(_cloudTimer);
+  if(typeof updateSync==='function')updateSync('saving');
   _cloudTimer=setTimeout(function(){
     var ours={};CLOUD_KEYS.forEach(function(k){ours[k]=S[k];});
     _docRef.get().then(function(snap){
@@ -2423,8 +2462,9 @@ function cloudSave(){
         if(typeof render==='function')render();
         _applyingRemote=false;
         _pendingWrite=false;
+        if(typeof updateSync==='function')updateSync('saved');
       });
-    }).catch(function(e){_pendingWrite=false;console.warn('Cloud opslaan mislukt',e);});
+    }).catch(function(e){_pendingWrite=false;if(typeof updateSync==='function')updateSync('error');console.warn('Cloud opslaan mislukt',e);});
   },500);
 }
 function applyRemote(d){
@@ -2692,7 +2732,8 @@ function routesChips(j){
     var bw=routeAtBankwerk(r.cel);
     var bg=bw?'var(--grn-l)':'var(--red-l)', col=bw?'var(--grn)':'var(--red)', bd=bw?'#a7e3c0':'#f3aaaa';
     var lbl=(r.route||'')+(r.cel?(' '+routeCelShort(r.cel)):'');
-    return '<span class="rt-chip" title="'+escapeHtml((r.route||'')+' '+(r.cel||'')+(bw?' — bij bankwerk':' — nog ervoor'))+'" style="background:'+bg+';color:'+col+';border:.5px solid '+bd+'">'+escapeHtml(lbl)+'</span>';
+    var ic=bw?'✓ ':'↑ ';
+    return '<span class="rt-chip" title="'+escapeHtml((r.route||'')+' '+(r.cel||'')+(bw?' — bij bankwerk':' — nog ervoor'))+'" style="background:'+bg+';color:'+col+';border:.5px solid '+bd+'">'+ic+escapeHtml(lbl)+'</span>';
   }).join('')+'</div>';
 }
 function migrateToFase(){
