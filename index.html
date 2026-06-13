@@ -351,6 +351,15 @@ html,body{height:100%;font-family:system-ui,-apple-system,sans-serif;background:
 .rdy-ok{background:var(--grn-l);color:var(--grn);border:.5px solid #a7e3c0}
 .rdy-wait{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
 .wg-corner{position:sticky;left:0;z-index:21;display:flex;flex-direction:column;gap:2px}
+.aw-dl{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:999px;margin:2px 0;white-space:nowrap}
+.aw-dl.dl-ok{background:var(--surf2);color:var(--t2)}
+.aw-dl.dl-warn{background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d}
+.aw-dl.dl-bad{background:var(--red-l);color:var(--red);border:.5px solid #fca5a5}
+.aw-rev{display:inline-block;font-size:9px;font-weight:700;padding:1px 7px;border-radius:999px;margin:2px 0;background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d;cursor:pointer}
+.aw-rev:hover{background:#fde68a}
+.awc-warn{color:var(--red);font-weight:800;margin-right:2px}
+.sp-readytog{padding:5px 9px;border:.5px solid var(--line);border-radius:6px;background:#fff;color:var(--t2);font-size:11px;font-family:inherit;cursor:pointer;white-space:nowrap}
+.sp-readytog.on{background:var(--grn-l);border-color:#86efac;color:var(--grn);font-weight:700}
 .wg-row.wknd-row .wg-daylabel{color:#b0a99c;background:#f3f1ec}
 .wg-cell.wknd{background:repeating-linear-gradient(45deg,#faf8f3,#faf8f3 7px,#f1eee7 7px,#f1eee7 14px)}
 .aw-compact{padding:4px 7px}
@@ -400,12 +409,6 @@ body.floor-on{overflow:hidden}
 .cnc-card-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--t2);margin-bottom:12px}
 .cnc-svg{width:100%;height:auto;display:block}
 .cnc-empty{padding:30px;text-align:center;color:var(--t3);font-style:italic}
-.cnc-add{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.cnc-add input{padding:8px 10px;border:.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:12px;color:var(--ink);outline:none;background:#fff;width:120px}
-.cnc-add input:focus{border-color:var(--gold)}
-.cnc-add input[type=number]{width:92px}
-.cnc-addbtn{padding:8px 16px;border:none;border-radius:7px;background:var(--ink);color:#fff;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer}
-.cnc-addbtn:hover{background:#333}
 .cnc-table-wrap{overflow-x:auto}
 .cnc-table{width:100%;border-collapse:collapse;font-size:12.5px}
 .cnc-table th{text-align:left;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);padding:6px 10px;border-bottom:1px solid var(--line)}
@@ -502,6 +505,7 @@ body.floor-on{overflow:hidden}
       <option value="klant">👤 Klant A→Z</option>
       <option value="hrs">⏱ Meeste uren</option>
     </select>
+    <button id="sp-ready-tog" class="sp-readytog" onclick="toggleReadyOnly()" title="Toon enkel fases die klaar zijn om op te bouwen">✓ Klaar</button>
   </div>
   <div class="sp-list" id="sp-list"></div>
 </div>
@@ -511,6 +515,7 @@ body.floor-on{overflow:hidden}
 <div class="modal">
   <div class="mh">Order blokkeren <button class="mx" onclick="closeBlock()">×</button></div>
   <div class="info" id="block-info"></div>
+  <div class="fg"><label>Categorie</label><select id="block-cat"><option value="materiaal">📦 Materiaal</option><option value="info">❓ Info / klant</option><option value="revisie">✎ Revisie</option><option value="andere">⚠ Andere</option></select></div>
   <div class="fg"><label>Reden</label><input id="block-reason" placeholder="bv. Fineer niet binnen…" onkeydown="if(event.key==='Enter')confirmBlock()"></div>
   <div class="fg"><label>Vrij vanaf (optioneel)</label><input type="date" id="block-date"></div>
   <div class="mact">
@@ -913,11 +918,39 @@ function renderGrid(){
   const wl=document.getElementById('wklbl'); if(wl) wl.textContent='';
 }
 
+function catIcon(c){return c==='materiaal'?'📦':c==='info'?'❓':c==='revisie'?'✎':'⚠';}
+function catLabel(c){return c==='materiaal'?'Materiaal':c==='info'?'Info/klant':c==='revisie'?'Revisie':'Andere';}
+function deadlineBadge(j,g){
+  if(!j.deadline)return '';
+  var dl=parseDMY(j.deadline); if(!dl)return '';
+  var day=gdate(g); day.setHours(0,0,0,0); dl.setHours(0,0,0,0);
+  var diff=Math.round((dl-day)/86400000);
+  var dn=('0'+dl.getDate()).slice(-2)+'/'+('0'+(dl.getMonth()+1)).slice(-2);
+  var cls,txt;
+  if(diff<0){cls='dl-bad';txt='⚠ na deadline '+dn;}
+  else if(diff<=5){cls='dl-warn';txt='📅 '+dn+' ('+diff+'d)';}
+  else {cls='dl-ok';txt='📅 '+dn;}
+  return '<div class="aw-dl '+cls+'">'+txt+'</div>';
+}
+function dlAfter(j,g){ if(!j.deadline)return false; var dl=parseDMY(j.deadline); if(!dl)return false; var day=gdate(g); day.setHours(0,0,0,0); dl.setHours(0,0,0,0); return dl<day; }
+function revBadge(j){ return j.revised?'<div class="aw-rev" onclick="event.stopPropagation();ackRevised(\''+j.id+'\')" title="Herzien sinds laatste import — klik om te bevestigen">✎ herzien</div>':''; }
+function ackRevised(jid){ var j=S.jobs.find(function(x){return x.id===jid;}); if(j){j.revised=false; render();} }
+function qDeadlinePill(j){
+  if(!j.deadline)return '';
+  var dl=parseDMY(j.deadline); if(!dl)return '';
+  var t=new Date(); t.setHours(0,0,0,0); dl.setHours(0,0,0,0);
+  var diff=Math.round((dl-t)/86400000);
+  var dn=('0'+dl.getDate()).slice(-2)+'/'+('0'+(dl.getMonth()+1)).slice(-2);
+  var cls=diff<0?'dl-bad':(diff<=14?'dl-warn':'dl-ok');
+  var rel=diff<0?(Math.abs(diff)+'d te laat'):(diff===0?'vandaag':'over '+diff+'d');
+  return '<span class="aw-dl '+cls+'">📅 '+dn+' · '+rel+'</span>';
+}
+function toggleReadyOnly(){ S.spReadyOnly=!S.spReadyOnly; renderSP(); }
 function chipHTML(j,pid,g,ji){
   const isOrig=j.groupId===j.id||(!j.splitOf&&j.groupId);
   const splitLnk=j.groupId?(isOrig?'<span class="split-lnk">&#8594; deel 1</span>':'<span class="split-lnk">&#8629; deel 2</span>'):'';
   const klantHtml=j.klant?('<div class="aw-klant"><span class="klant-dot" style="background:'+kColor(j.klant)+';margin-right:3px"></span>'+j.klant+'</div>'):'';
-  const blkHtml=j.blocked?('<span style="color:var(--amb);margin-left:3px">&#9888; '+(j.blockedReason?j.blockedReason.slice(0,18):'')+'</span>'):'';
+  const blkHtml=j.blocked?('<span style="color:var(--amb);margin-left:3px">'+catIcon(j.blockedCat)+' <b>'+catLabel(j.blockedCat)+'</b>'+(j.blockedReason?(' — '+escapeHtml(j.blockedReason.slice(0,22))):'')+'</span>'):'';
   const div=document.createElement('div');
   if(j.done){
     div.className='aw done-chip';
@@ -954,62 +987,15 @@ function chipHTML(j,pid,g,ji){
     const _rd=faseReady(j);
     const _dot=_rd.total?('<span class="rdy-dot" title="'+(_rd.ready?'klaar om op te bouwen':_rd.atBw+'/'+_rd.total+' bij bankwerk')+'" style="background:'+(_rd.ready?'var(--grn)':'var(--amb)')+'"></span>'):'';
     div.setAttribute('title',escapeHtml((j.project||j.nr||'')+'  '+(j.klant||'')+'  fase '+(j.fase||'')+'  '+cleanDesc(j.nr,j.desc||'')));
-    div.innerHTML='<div class="aw-body awc"><div class="awc-top">'+_dot+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div><div class="awc-sub">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+escapeHtml(j.klant||'')+spanBadgeC+'<span class="awc-hrs">'+j.hrs+'u</span></div></div>';
+    var _cw=(dlAfter(j,g)?'<span class="awc-warn" title="Na deadline">⚠</span>':'')+(j.revised?'<span class="awc-warn" title="Herzien">✎</span>':'');
+    div.innerHTML='<div class="aw-body awc"><div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div><div class="awc-sub">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+escapeHtml(j.klant||'')+spanBadgeC+'<span class="awc-hrs">'+j.hrs+'u</span></div></div>';
     return div.outerHTML;
   }
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+spanBadge+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+deadlineBadge(j,g)+revBadge(j)+spanBadge+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
 
-function personRow(p,type,dates,cols){
-  let h=`<div class="wg-row" style="display:grid;grid-template-columns:${cols}">`;
-  const DSHORT=['Zo','Ma','Di','Wo','Do','Vr','Za'];
-  const offLabel=(p.offDays||[]).filter(d=>S.workDays.includes(d)).map(d=>DSHORT[d]).join(', ');
-  // Mini capaciteitsbalken per dag
-  const capBars=dates.map((d2,di2)=>{
-    const cap2=personHrs(p.id,di2);const used2=dayUsed(p.id,di2);
-    const ds2=d2.toISOString().slice(0,10);
-    const isHol2=!!S.holidays[ds2];
-    if(cap2===0||isHol2)return'<div class="wg-pcap-day off" title="'+(isHol2?'Feestdag':'Vrij')+'"></div>';
-    const pct2=Math.min(100,Math.round(used2/cap2*100));
-    const cls2=pct2>=100?'over':pct2>=80?'warn':pct2>0?'ok':'';
-    const rest2=Math.max(0,cap2-used2);
-    return`<div class="wg-pcap-day ${cls2}" style="width:${pct2}%" title="${DAYS[d2.getDay()]} ${used2}/${cap2}u · nog ${rest2}u vrij"></div>`;
-  }).join('');
-  h+=`<div class="wg-person" onclick="openPeopleForPerson('${p.id}')" oncontextmenu="showPersonCtx(event,'${p.id}')">
-    <div class="wg-pname">${p.name}</div>
-    ${p.role?`<div class="wg-prole">${p.role}</div>`:''}
-    ${offLabel?`<div class="poff-lbl">vrij: ${offLabel}</div>`:''}
-    <div class="wg-pcap">${capBars}</div>
-  </div>`;
-  dates.forEach((_,di)=>{
-    const jobs=getPlan(p.id,di);
-    const used=dayUsed(p.id,di);
-    const cap=personHrs(p.id,di);
-    const isW=S.workDays.includes(wdates(S.wo)[di].getDay());
-    const poff=!isW;
-    const lCls=used>=cap?'over':used>=cap*.85?'full':'';
-    const dateStr=wdates(S.wo)[di].toISOString().slice(0,10);
-    const evKey=`${p.id}_${dateStr}`;
-    const ev=S.events[evKey];
-    const isToday=wdates(S.wo)[di].toDateString()===new Date().toDateString();
-    const dow=wdates(S.wo)[di].getDay();
-    const isPersonOff=(p.offDays||[]).includes(dow)&&S.workDays.includes(dow);
-    const isHolCell=isHoliday(di);
-    h+=`<div class="wg-cell${poff?' wknd':''}${isPersonOff?' poff':''}${isToday?' today-cell':''}${isHolCell?' holiday-cell':''}"
-      ondragover="dov(event,'${type}')"
-      ondragleave="dlv(event)"
-      ondrop="drop(event,'${p.id}',${di},'${type}')"
-      oncontextmenu="showCellCtx(event,'${p.id}',${di})"
-      data-type="${type}">
-      ${ev?`<div class="ev-badge ${ev.type}">${ev.type==='sick'?'🤒 Ziek':ev.type==='breakdown'?'🔧 Machine stuk':'⚠️ '+ev.note}</div>`:''}
-      ${jobs.map((j,ji)=>chipHTML(j,p.id,di,ji)).join('')}
-      ${used>0?`<div class="cell-load ${lCls}">${used}/${cap}u</div>`:''}
-    </div>`;
-  });
-  h+=`</div>`;
-  return h;
-}
+
 
 // ════════════════════════════════════════
 // DRAG & DROP
@@ -1197,8 +1183,10 @@ function renderSP(){
     !j.done&&  // done orders blijven in planning, niet in wachtrij
     !assigned.has(j.id)&&
     (!q||j.nr.toLowerCase().includes(q)||(j.klant||'').toLowerCase().includes(q)||j.desc.toLowerCase().includes(q))&&
-    (!tf||j.cel===tf)
+    (!tf||j.cel===tf)&&
+    (!S.spReadyOnly||faseReady(j).ready)
   );
+  var _rt=document.getElementById('sp-ready-tog'); if(_rt)_rt.classList.toggle('on',!!S.spReadyOnly);
   // group by klant + project prefix
   const grps={};
   jobs.forEach(j=>{
@@ -1261,8 +1249,8 @@ function renderSP(){
           ${readyBadge(j)}${routesChips(j)}
           ${j.klant?`<div class="sp-oklant"><span class="klant-dot" style="background:${kc}"></span>${j.klant}</div>`:''}
           <div class="sp-ometa">
-            ${blk?`<span class="sp-opill blk">⚠ Geblokkeerd</span><span style="font-size:9px;color:var(--amb)">${j.blockedReason?.slice(0,22)}</span>`:''}
-            ${isUrgent(j.deadline)?`<span style="font-size:9px;color:var(--red);font-weight:700">⚠️ Deadline</span>`:''}
+            ${blk?`<span class="sp-opill blk">${catIcon(j.blockedCat)} ${catLabel(j.blockedCat)}</span>${j.blockedReason?`<span style="font-size:9px;color:var(--amb)">${escapeHtml(j.blockedReason.slice(0,22))}</span>`:''}`:''}${j.revised?`<span class="sp-opill" style="background:var(--amb-l);color:var(--amb);border:.5px solid #fcd34d">✎ herzien</span>`:''}
+            ${qDeadlinePill(j)}
             <div class="sp-ohrs" onclick="event.stopPropagation()">
               <button class="sp-hbtn" ondragstart="event.stopPropagation();event.preventDefault()" onclick="changeSpHrs('${j.id}',-0.5)">−</button>
               <input class="sp-hinp" type="text" value="${j.hrs}" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setSpHrsAbs(&#39;${j.id}&#39;,this.value)"><span class="hrs-u">u</span>
@@ -1363,6 +1351,7 @@ function openBlock(id){
   S._blockId=id;
   const j=S.jobs.find(x=>x.id===id);
   document.getElementById('block-info').innerHTML=`<strong>${j.desc}</strong><br><span style="color:var(--t2)">${j.nr}</span>`;
+  document.getElementById('block-cat').value=j.blockedCat||'materiaal';
   document.getElementById('block-reason').value=j.blockedReason||'';
   document.getElementById('block-date').value=j.blockedUntil||'';
   document.getElementById('blockModal').classList.remove('hidden');
@@ -1373,7 +1362,7 @@ function confirmBlock(){
   const r=document.getElementById('block-reason').value.trim();
   if(!r){document.getElementById('block-reason').style.borderColor='var(--red)';return;}
   const j=S.jobs.find(x=>x.id===S._blockId);
-  j.blocked=true;j.blockedReason=r;j.blockedUntil=document.getElementById('block-date').value;
+  j.blocked=true;j.blockedCat=document.getElementById('block-cat').value;j.blockedReason=r;j.blockedUntil=document.getElementById('block-date').value;
   closeBlock();render();toast('⚠ Geblokkeerd');
 }
 function openUnblock(id){
@@ -1385,7 +1374,7 @@ function openUnblock(id){
 function closeUnblock(){document.getElementById('unblockModal').classList.add('hidden');S._unblockId=null;}
 function confirmUnblock(){
   const j=S.jobs.find(x=>x.id===S._unblockId);
-  j.blocked=false;j.blockedReason='';j.blockedUntil='';
+  j.blocked=false;j.blockedCat='';j.blockedReason='';j.blockedUntil='';
   closeUnblock();render();toast('✓ Vrijgegeven');
 }
 
@@ -1539,7 +1528,7 @@ function importRows(rows){
     if(j.done||!j.fase)return;
     if(!importKeys.has(gk(j.project,j.fase)) && !planned.has(j.id)){ j.done=true; removed++; }
   });
-  var added=0,upd=0,revived=0; var dlChanges=[];
+  var added=0,upd=0,revived=0,revCnt=0; var dlChanges=[];
   order.forEach(function(key){
     var F=imp[key];
     if(existing.has(key)){
@@ -1547,6 +1536,9 @@ function importRows(rows){
       if(ex.done){ex.done=false;revived++;}
       if(F.desc)ex.desc=F.desc; if(F.klant)ex.klant=F.klant; if(F.project)ex.project=F.project;
       ex.nr=(ex.project?ex.project+'-':'')+ex.fase;
+      var _oldR=(ex.routes||[]).map(function(r){return (r.route||'')+'|'+(r.cel||'');}).sort().join(',');
+      var _newR=(F.routes||[]).map(function(r){return (r.route||'')+'|'+(r.cel||'');}).sort().join(',');
+      if(_oldR!==''&&_oldR!==_newR){ ex.revised=true; revCnt++; }
       ex.routes=F.routes;
       if(F.deadline&&ex.deadline!==F.deadline){ dlChanges.push({nr:ex.nr,desc:ex.desc,old:ex.deadline,new:F.deadline}); ex.deadline=F.deadline; upd++; }
     } else {
@@ -1558,6 +1550,7 @@ function importRows(rows){
   if(added)parts.push(added+' nieuw');
   if(revived)parts.push(revived+' teruggehaald');
   if(dlChanges.length)parts.push(dlChanges.length+' deadline gewijzigd');
+  if(revCnt)parts.push(revCnt+' herzien');
   if(removed)parts.push(removed+' verwijderd uit wachtrij');
   if(!parts.length)parts.push('Geen wijzigingen');
   var _cncSnap=(typeof backlogSnapshotFromImport==='function')?backlogSnapshotFromImport('cnc',imp,order):null;
@@ -2552,55 +2545,7 @@ function moveToWeek(jid,pid,g,delta){
   if(typeof toast==='function') toast(delta>0?'→ 1 week later':'← 1 week vroeger');
 }
 
-// ── Slepen naar de rand → week vooruit/terug, met zichtbare zones ──
-(function(){
-  var _t=null,_dir=0,_last=0;
-  function mk(id,label){
-    var d=document.createElement('div'); d.id=id;
-    d.style.cssText='position:fixed;z-index:650;pointer-events:none;display:flex;align-items:center;justify-content:center;text-align:center;font:700 12px system-ui,-apple-system,sans-serif;color:#7a5a18;background:rgba(200,169,110,.16);border:2px dashed rgba(200,169,110,.75);writing-mode:vertical-rl;letter-spacing:.08em;border-radius:6px';
-    d.textContent=label; document.body.appendChild(d); return d;
-  }
-  function zL(){return document.getElementById('wkzL');}
-  function zR(){return document.getElementById('wkzR');}
-  function remove(){ var a=zL(),b=zR(); if(a)a.remove(); if(b)b.remove(); }
-  function clr(){ if(_t){clearTimeout(_t);_t=null;} _dir=0; var a=zL(),b=zR(); if(a)a.style.background='rgba(200,169,110,.16)'; if(b)b.style.background='rgba(200,169,110,.16)'; }
-  function place(){
-    var gw=document.querySelector('.grid-wrap'); if(!gw) return null;
-    var r=gw.getBoundingClientRect();
-    var padR=parseInt(getComputedStyle(gw).paddingRight)||0;
-    var w=70, top=Math.max(r.top,58), h=r.bottom-top, rightEdge=r.right-padR;
-    var a=zL()||mk('wkzL','‹ vorige week'); var b=zR()||mk('wkzR','volgende week ›');
-    a.style.left=(r.left)+'px'; a.style.top=top+'px'; a.style.width=w+'px'; a.style.height=h+'px';
-    b.style.left=(rightEdge-w)+'px'; b.style.top=top+'px'; b.style.width=w+'px'; b.style.height=h+'px';
-    return {left:r.left, rightEdge:rightEdge, w:w, top:top, h:h};
-  }
-  document.addEventListener('dragover', function(e){
-    return; // week-rand-navigatie uit (doorlopende lijst)
-    if(!document.body.classList.contains('dragging')){ clr(); remove(); return; }
-    var p=place(); if(!p) return;
-    var dir=0;
-    if(e.clientY>=p.top && e.clientY<=p.top+p.h){
-      if(e.clientX>=p.left && e.clientX<p.left+p.w) dir=-1;
-      else if(e.clientX<=p.rightEdge && e.clientX>p.rightEdge-p.w) dir=1;
-    }
-    var a=zL(),b=zR();
-    if(a)a.style.background = dir===-1?'rgba(200,169,110,.42)':'rgba(200,169,110,.16)';
-    if(b)b.style.background = dir===1?'rgba(200,169,110,.42)':'rgba(200,169,110,.16)';
-    if(dir===0){ clr(); return; }
-    if(dir!==_dir){
-      if(_t)clearTimeout(_t); _dir=dir;
-      _t=setTimeout(function(){
-        _t=null; _dir=0;
-        var now=Date.now(); if(now-_last<450) return; _last=now;
-        if(typeof chWeek==='function')chWeek(dir);
-        place();
-        if(typeof toast==='function')toast(dir<0?'◀ Vorige week':'Volgende week ▶');
-      }, 420);
-    }
-  }, true);
-  document.addEventListener('dragend', function(){ clr(); remove(); }, true);
-  document.addEventListener('drop', function(){ clr(); remove(); }, true);
-})();
+// (week-rand-navigatie verwijderd — doorlopende lijst)
 
 // ── Status / route / details / on-hold ──
 function escapeHtml(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
