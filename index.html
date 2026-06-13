@@ -1711,7 +1711,8 @@ function cncSnapshotFromImport(imp,order){
   (order||[]).forEach(function(k){
     var F=imp[k]; if(!F)return;
     (F.routes||[]).forEach(function(r){
-      var id=(F.project||'')+'-'+F.fase+'-'+(r.route||r.cel||'');
+      if(((r.cel||'').trim().toLowerCase())!=='cnc')return;
+      var id=(F.project||'')+'-'+F.fase+'-'+(r.route||'');
       set[id]=true;
     });
   });
@@ -2386,7 +2387,7 @@ render();
 // ========================================
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
-var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays'];
+var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs'];
 var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false;
 function cloudSave(){
   if(!_docRef||_applyingRemote||!_cloudReady)return;
