@@ -380,6 +380,10 @@ body.dragging .wg-cell:not(.drop-ok):not(.drop-no){opacity:.92}
 .awc-klant2{font-size:11px;font-weight:700;color:var(--ink);line-height:1.3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .awc-fase{font-size:10.5px;color:var(--ink);line-height:1.3;margin-top:1px;word-break:break-word}
 .awc-hrsrow{display:flex;align-items:center;gap:2px;margin-top:4px}
+.mat-badge{font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:1px;margin-left:3px;white-space:nowrap;line-height:1}
+.mat-badge b{font-size:9px;margin-left:1px}
+.aw-mat{margin-top:3px;font-size:10.5px;display:flex;align-items:center;gap:3px;flex-wrap:wrap;color:var(--t2)}
+.awc-top .mat-badge{font-size:9.5px}
 .awc-fase b{font-weight:800}
 .awc-klant{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .awc-foot{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
@@ -469,6 +473,7 @@ body.floor-on{overflow:hidden}
     <button class="tbtn" onclick="openFloor()" title="Groot, leesbaar scherm voor het atelier">📺 Atelier</button>
     <button class="tbtn" onclick="openBacklog('cnc')">📈 CNC-backlog</button>
     <button class="tbtn" onclick="openBacklog('bank')">📈 Bankwerk-backlog</button>
+    <button class="tbtn" onclick="openMatList()" id="mat-btn" title="Materiaal-opvolging (Navision)">📦 Materiaal <span class="badge-cnt hidden" id="mat-cnt">0</span></button>
     <span class="vsep"></span>
     <div class="more-wrap">
       <button class="tbtn" onclick="toggleMore(event)">⋯ Meer</button>
@@ -494,7 +499,7 @@ body.floor-on{overflow:hidden}
     <p><b>Routes:</b> <span style="color:var(--grn);font-weight:700">✓ groen</span> = route staat al bij bankwerk &middot; <span style="color:var(--red);font-weight:700">↑ rood</span> = zit nog een stap ervoor. <b>✓ klaar om op te bouwen</b> = álle routes bij bankwerk.</p>
     <p><b>Deadline:</b> 📅 met datum — amber = binnen 5 dagen, rood “⚠ na deadline” = ná de leverdatum ingepland.</p>
     <p><b>✎ herzien</b> = de order wijzigde bij de laatste import; klik op het label om te bevestigen.</p>
-    <p><b>Knoppen:</b> 📋 Wachtrij &middot; ⏸ On hold &middot; + Order &middot; ↑ Import (Propos) &middot; ▬ Compact/Detail &middot; 📺 Atelier &middot; 📈 CNC-/Bankwerk-backlog &middot; ⋯ Meer (mensen, output, legende, export, print).</p>
+    <p><b>Knoppen:</b> 📋 Wachtrij &middot; ⏸ On hold &middot; + Order &middot; ↑ Import (Propos) &middot; ▬ Compact/Detail &middot; 📺 Atelier &middot; 📈 CNC-/Bankwerk-backlog &middot; 📦 Materiaal (Navision) &middot; ⋯ Meer (mensen, output, legende, export, print).</p>
     <p><b>Opslaan:</b> alles wordt automatisch en gedeeld bewaard — het statusje bovenaan toont “bewaren…/opgeslagen”. Gelijktijdige wijzigingen van collega’s worden samengevoegd.</p>
   </div>
   <div class="mact"><button class="mbtn ok" onclick="closeHelp()">Sluiten</button></div>
@@ -723,6 +728,7 @@ function load(){
     });
   }catch(e){console.warn('load failed',e);}
   if(!S.events) S.events={};
+  if(!S.materiaal) S.materiaal={};
 }
 
 // ════════════════════════════════════════
@@ -877,6 +883,7 @@ function render(){
   updateCardModeBtn();
   renderSPBadge();
   if(typeof updateHoldBadge==='function')updateHoldBadge();
+  if(typeof updateMatBadge==='function')updateMatBadge();
   if(_spOpen) renderSP();
   save();
   if(_planSearchTerm) setTimeout(applyPlanSearch,50);
@@ -1025,14 +1032,14 @@ function chipHTML(j,pid,g,ji){
     div.setAttribute('onclick',"if(!(event.target.closest&&event.target.closest('.aw-del'))){openDetail('"+j.id+"')}");
     var _cw=(dlAfter(j,g)?'<span class="awc-warn" title="Na deadline">⚠</span>':'')+(j.revised?'<span class="awc-warn" title="Herzien">✎</span>':'');
     div.innerHTML='<div class="aw-body awc">'
-      +'<div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'
+      +'<div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+mBadgesHtml(j)+delBtn+'</div>'
       +(j.klant?('<div class="awc-klant2">'+escapeHtml(j.klant)+'</div>'):'')
       +'<div class="awc-fase">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+(j.desc?escapeHtml(cleanDesc(j.nr,j.desc)):'')+'</div>'
       +'<div class="awc-hrsrow">'+spanBadgeC+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div>'
       +'</div></div>';
     return div.outerHTML;
   }
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+deadlineBadge(j,g)+revBadge(j)+spanBadge+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+deadlineBadge(j,g)+revBadge(j)+spanBadge+routesHtml+matLineHtml(j)+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
 
@@ -2415,7 +2422,7 @@ render();
 // ========================================
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
-var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs','bankBacklog','bankLastPonrs'];
+var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs','bankBacklog','bankLastPonrs','materiaal'];
 var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false,_lastRemote=null;
 function _mEq(a,b){return JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);}
 function _projectKeys(d){var o={};CLOUD_KEYS.forEach(function(k){if(d&&d[k]!==undefined)o[k]=d[k];});return o;}
@@ -2700,6 +2707,8 @@ function openDetail(jid){
   if(typeof closeCtx==='function')closeCtx();
   var j=S.jobs.find(function(x){return x.id===jid;}); if(!j)return;
   var rows=[['Order',fmtNr(j.nr)],['Omschrijving',escapeHtml(j.desc||'')],['Klant',escapeHtml(j.klant||'\u2013')],['Cel',escapeHtml(j.cel||'\u2013')],['Normuren',j.estHrs?(j.estHrs+'u'):'\u2013'],['Ingestelde uren',(j.hrs||0)+'u'],['Status',j.status?statusBadge(j.status):'\u2013'],['Routes',(j.routes&&j.routes.length)?j.routes.map(function(r){return escapeHtml((r.route||'')+' '+(r.cel||'')+(r.status?(' · '+r.status):''));}).join('<br>'):'–'],['Deadline',escapeHtml(j.deadline||'\u2013')]];
+  var _ml=(typeof mLines==='function')?mLines(j):[];
+  if(_ml.length){ rows.push(['Materiaal', _ml.map(function(L){var c=L.binnen?'var(--grn)':'var(--red)';return '<span style="color:'+c+'">'+(L.binnen?'\u2713':'\u2717')+'</span> '+(L.bestemming==='werf'?'\uD83D\uDE9A ':'\uD83C\uDFED ')+escapeHtml(L.artikel||'?')+(L.lever?(' <span style="color:var(--t3)">('+escapeHtml(L.lever)+')</span>'):'');}).join('<br>') ]); }
   if(j.blocked)rows.push(['On hold','\u26A0 '+escapeHtml(j.blockedReason||'')+(j.blockedUntil?(' (vrij '+escapeHtml(j.blockedUntil)+')'):'')]);
   var h='<div class="modal"><div class="mh">Orderdetails <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">&#215;</button></div>';
   h+='<table style="width:100%;font-size:12px;border-collapse:collapse">';
@@ -2797,6 +2806,129 @@ function readyBadge(j){
   if(!r.total)return '';
   if(r.ready)return '<span class="rdy rdy-ok">✓ klaar om op te bouwen</span>';
   return '<span class="rdy rdy-wait">'+r.atBw+'/'+r.total+' bij bankwerk</span>';
+}
+
+/* ===== Navision materiaal-opvolging ===== */
+function mGk(project,fase){return (project||'')+'||'+(fase||'');}
+function mLines(j){ if(!j||!S.materiaal)return []; return S.materiaal[mGk(j.project,j.fase)]||[]; }
+function gOfDate(d){ if(!d)return null; var dt=(d instanceof Date)?d:parseDMY(d); if(!dt||isNaN(dt.getTime()))return null; var m=wdates(0)[0]; var b=new Date(m); b.setHours(0,0,0,0); var x=new Date(dt); x.setHours(0,0,0,0); return Math.round((x-b)/86400000); }
+function fmtDateG(g){ var d=gdate(g); return ('0'+d.getDate()).slice(-2)+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+function faseStartG(j){ if(!j)return null; var best=null; var P=S.plan||{}; for(var k in P){ if(!P.hasOwnProperty(k))continue; var arr=P[k]||[]; if(arr.indexOf(j.id)<0)continue; var p=k.split('_'); var wo=parseInt(p[0],10), di=parseInt(p[p.length-1],10); if(isNaN(wo)||isNaN(di))continue; var g=wo*7+di; if(best===null||g<best)best=g; } return best; }
+function mIsIn(v){ if(v===true)return true; var s=String(v==null?'':v).trim().toLowerCase(); if(!s)return false; if(/^(nee|neen|geen|open|besteld|backorder|onderweg|niet|false|0)\b/.test(s))return false; if(/(^ja|^ok|binnen|ontvangen|geleverd|volledig|compleet|aanwezig|voorraad|in stock|true|^1$|^x$|^v$)/.test(s))return true; if(parseDMY(s))return true; return false; }
+function mStatusFor(j,dest){
+  var lines=mLines(j).filter(function(L){return L.bestemming===dest;});
+  var open=lines.filter(function(L){return !L.binnen;});
+  var startG=faseStartG(j); var sev='ok';
+  if(open.length){
+    sev='open'; var today=gToday(); var worst=null;
+    open.forEach(function(L){ var due=startG; var lg=gOfDate(L.lever); if(lg!=null){due=(due==null)?lg:Math.min(due,lg);} if(due!=null){var dl=due-today; worst=(worst==null)?dl:Math.min(worst,dl);} });
+    if(worst!=null){ if(worst<=7)sev='red'; else if(worst<=14)sev='amber'; }
+  }
+  return {total:lines.length,open:open.length,items:open,sev:sev,startG:startG};
+}
+function _mSevCol(sev,open){ return sev==='red'?'var(--red)':sev==='amber'?'var(--amb)':open?'var(--t3)':'var(--grn)'; }
+function mBadgesHtml(j){
+  var defs=[['atelier','🏭','Atelier / magazijn'],['werf','🚚','Werf']];
+  var out='';
+  defs.forEach(function(d){
+    var st=mStatusFor(j,d[0]); if(!st.total)return;
+    var col=_mSevCol(st.sev,st.open);
+    var items=st.items.map(function(L){return '• '+(L.artikel||'?')+(L.lever?(' (verwacht '+L.lever+')'):'');}).join('\n');
+    var ttl=d[2]+': '+(st.open?(st.open+' van '+st.total+' nog niet binnen'):'alles binnen')+(items?('\n'+items):'');
+    out+='<span class="mat-badge" title="'+escapeHtml(ttl)+'" style="color:'+col+'">'+d[1]+(st.open?('<b>'+st.open+'</b>'):'✓')+'</span>';
+  });
+  return out;
+}
+function matLineHtml(j){ var b=mBadgesHtml(j); if(!b)return ''; return '<div class="aw-mat">📦'+b+'</div>'; }
+function updateMatBadge(){
+  var n=0; (S.jobs||[]).forEach(function(j){ if(j.done)return; if(!mLines(j).length)return; if(mStatusFor(j,'atelier').sev==='red'||mStatusFor(j,'werf').sev==='red')n++; });
+  var b=document.getElementById('mat-cnt'); if(b){ b.textContent=n; b.classList.toggle('hidden',n===0); b.style.background='var(--red)'; b.style.color='#fff'; }
+}
+function matFollowup(){
+  var out=[]; var rank={red:0,amber:1,open:2,ok:3};
+  (S.jobs||[]).forEach(function(j){ if(j.done)return; if(!mLines(j).length)return; var at=mStatusFor(j,'atelier'), wf=mStatusFor(j,'werf'); if(at.open===0&&wf.open===0)return; out.push({j:j,at:at,wf:wf,startG:faseStartG(j)}); });
+  out.sort(function(a,b){ var ra=Math.min(rank[a.at.sev],rank[a.wf.sev]), rb=Math.min(rank[b.at.sev],rank[b.wf.sev]); if(ra!==rb)return ra-rb; var ga=a.startG==null?99999:a.startG, gb=b.startG==null?99999:b.startG; return ga-gb; });
+  return out;
+}
+function openMatList(){
+  var ov=document.createElement('div'); ov.className='ov'; ov.style.zIndex='720'; ov.id='matModalOv';
+  ov.innerHTML='<div class="modal wide" id="matModal" style="max-height:84vh;display:flex;flex-direction:column"></div>';
+  ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov); renderMatList();
+}
+function renderMatList(){
+  var m=document.getElementById('matModal'); if(!m)return;
+  var rows=matFollowup(); var nMat=Object.keys(S.materiaal||{}).length;
+  var h='<div class="mh">📦 Materiaal-opvolging ('+rows.length+') <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">×</button></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:2px 0 8px;flex-wrap:wrap;font-size:11px;color:var(--t2)">';
+  h+='<label class="tbtn" style="cursor:pointer;font-size:11px">↑ Navision-bestand importeren<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleMatImport(event)"></label>';
+  h+='<span>'+nMat+' fases met materiaaldata</span>';
+  h+='<span><span style="color:var(--red)">●</span> niet binnen, ≤1 week tot banken &nbsp;<span style="color:var(--amb)">●</span> ≤2 weken &nbsp;<span style="color:var(--t3)">●</span> verder weg</span>';
+  h+='<button class="mbtn" style="font-size:10px;padding:3px 8px;margin-left:auto" onclick="matSample()">Voorbeeldbestand</button>';
+  h+='</div>';
+  if(!nMat){ h+='<div style="padding:24px;text-align:center;color:var(--t3)">Nog geen materiaaldata geïmporteerd.<br>Importeer een Navision-export (knop hierboven), of klik op “Voorbeeldbestand” voor het verwachte formaat.</div>'; }
+  else if(!rows.length){ h+='<div style="padding:24px;text-align:center;color:var(--grn)">✓ Al het materiaal voor de ingeplande fases is binnen.</div>'; }
+  else {
+    h+='<div style="flex:1;overflow:auto;border:.5px solid var(--line);border-radius:7px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surf2)"><th style="text-align:left;padding:6px 10px">Fase</th><th style="text-align:left;padding:6px 10px">Klant</th><th style="text-align:left;padding:6px 10px">Start banken</th><th style="text-align:left;padding:6px 10px">🏭 Atelier</th><th style="text-align:left;padding:6px 10px">🚚 Werf</th><th style="text-align:left;padding:6px 10px">Openstaande artikels</th></tr></thead><tbody>';
+    rows.forEach(function(r){ var j=r.j;
+      var startTxt=r.startG!=null?fmtDateG(r.startG):'<span style="color:var(--t3)">wachtrij</span>';
+      function cell(st){ if(!st.total)return '<span style="color:var(--t3)">–</span>'; var c=_mSevCol(st.sev,st.open); return '<span style="color:'+c+';font-weight:700">'+(st.open?(st.open+' open'):'✓ binnen')+'</span>'; }
+      var items=[].concat(r.at.items.map(function(L){return '🏭 '+(L.artikel||'?')+(L.lever?(' ('+L.lever+')'):'');}),r.wf.items.map(function(L){return '🚚 '+(L.artikel||'?')+(L.lever?(' ('+L.lever+')'):'');})).map(escapeHtml).join('<br>');
+      var rc=(r.at.sev==='red'||r.wf.sev==='red')?'rgba(214,69,69,.07)':((r.at.sev==='amber'||r.wf.sev==='amber')?'rgba(200,150,40,.08)':'transparent');
+      h+='<tr style="border-bottom:.5px solid var(--line);background:'+rc+'"><td style="padding:6px 10px;cursor:pointer" onclick="openDetail(&#39;'+j.id+'&#39;)"><div style="font-weight:700">'+escapeHtml((j.project||'')+' · '+(j.fase||''))+'</div><div style="font-size:9.5px;color:var(--t3)">'+escapeHtml(cleanDesc(j.nr,j.desc||''))+'</div></td><td style="padding:6px 10px">'+escapeHtml(j.klant||'–')+'</td><td style="padding:6px 10px;white-space:nowrap">'+startTxt+'</td><td style="padding:6px 10px;white-space:nowrap">'+cell(r.at)+'</td><td style="padding:6px 10px;white-space:nowrap">'+cell(r.wf)+'</td><td style="padding:6px 10px">'+items+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  h+='<div class="mact" style="margin-top:10px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';
+  m.innerHTML=h;
+}
+function importMateriaal(rows){
+  rows=rows.filter(function(r){return r&&r.some(function(c){return String(c).trim();});});
+  if(rows.length<2){toast('Geen materiaaldata');return;}
+  var hi=0;
+  for(var i=0;i<Math.min(6,rows.length);i++){ var jn=rows[i].map(function(c){return String(c).toLowerCase();}).join('|'); if(jn.indexOf('artikel')>=0||jn.indexOf('materiaal')>=0||jn.indexOf('bestemming')>=0||jn.indexOf('ponr')>=0){hi=i;break;} }
+  var hdr=rows[hi].map(function(h){return String(h).trim().toLowerCase();});
+  var col=function(){for(var a=0;a<arguments.length;a++){var n=arguments[a];var idx=hdr.findIndex(function(h){return h.indexOf(String(n).toLowerCase())>=0;});if(idx>=0)return idx;}return -1;};
+  var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','locatie','lokatie','levering naar','leveradres','naar'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad','status'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iKl=col('klant');
+  if(iArt<0||(iPonr<0&&iFase<0)){ alert('Materiaal-import kon niet worden uitgevoerd.\n\nVerwachte kolommen: ponr (of project + fase), artikel, bestemming, binnen, leverdatum.\n\nGevonden kolommen:\n'+hdr.join(', ')); return; }
+  function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
+  var mat={},cnt=0;
+  rows.slice(hi+1).forEach(function(row){
+    if(!row||row.every(function(c){return !c;}))return;
+    var project='',fase='';
+    if(iPonr>=0){var pp=pnr(row[iPonr]);project=pp.project;fase=pp.fase;}
+    if(iProj>=0&&String(row[iProj]).trim())project=String(row[iProj]).trim();
+    if(iFase>=0&&String(row[iFase]).trim())fase=String(row[iFase]).trim();
+    if(!fase)return;
+    var key=mGk(project,fase);
+    var bestRaw=iBest>=0?String(row[iBest]||''):'';
+    var dest=/werf|site|plaats|montage|extern/i.test(bestRaw)?'werf':'atelier';
+    var art=iArt>=0?String(row[iArt]||'').trim():'';
+    var lev=iLev>=0?String(row[iLev]||'').trim():'';
+    var binnen=iIn>=0?mIsIn(row[iIn]):false;
+    if(!mat[key])mat[key]=[];
+    mat[key].push({artikel:art,bestemming:dest,binnen:binnen,lever:lev});
+    cnt++;
+  });
+  S.materiaal=mat;
+  if(typeof cloudSave==='function')cloudSave();
+  render();
+  if(document.getElementById('matModal'))renderMatList();
+  toast('Materiaal: '+cnt+' regels · '+Object.keys(mat).length+' fases');
+}
+function handleMatImport(e){
+  var f=e.target.files[0];if(!f)return;
+  if(f.name.toLowerCase().match(/\.xlsx?$/)){var r=new FileReader();r.onload=function(ev){try{var wb=XLSX.read(ev.target.result,{type:'array'});importMateriaal(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''}));}catch(err){toast('Excel fout: '+err.message);}};r.readAsArrayBuffer(f);}
+  else {var r=new FileReader();r.onload=function(ev){importMateriaal(ev.target.result.split('\n').map(function(l){return l.split(/[,;\t]/).map(function(c){return c.replace(/^"|"$/g,'').trim();});}));};r.readAsText(f,'UTF-8');}
+  e.target.value='';
+}
+function matSample(){
+  var csv='ponr;artikel;bestemming;binnen;leverdatum\n'
+   +'P25-0227-120200;Inox werkblad 3000x650;atelier;nee;22-06-2026\n'
+   +'P25-0227-120200;Greeploze scharnieren (set);atelier;ja;\n'
+   +'P25-0227-120200;Plint RVS op maat;werf;nee;25-06-2026\n'
+   +'P23-0460-123600;Fineer noten 12mm;atelier;nee;18-06-2026\n';
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='materiaal-voorbeeld.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},200);
 }
 </script>
 </body>
