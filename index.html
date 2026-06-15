@@ -377,6 +377,12 @@ body.dragging .wg-cell:not(.drop-ok):not(.drop-no){opacity:.92}
 .rdy-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .awc-sub{font-size:10px;color:var(--t2);margin-top:2px;display:flex;align-items:center;gap:5px}
 .awc-hrs{margin-left:auto;font-weight:700;color:var(--ink)}
+.awc-fase{font-size:10.5px;color:var(--ink);line-height:1.3;margin-top:2px;word-break:break-word}
+.awc-fase b{font-weight:800}
+.awc-klant{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.awc-foot{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
+.aw-compact .hrs-btn{width:17px;height:17px;font-size:12px}
+.aw-compact .hrs-inp{width:26px}
 .legend-bar{display:flex;flex-wrap:wrap;gap:6px 16px;padding:7px 14px;background:#1f1f1c;border-bottom:.5px solid #3a3a36;font-size:11px;color:#d8d4ca}
 .legend-bar .lg{display:flex;align-items:center;gap:5px}
 .legend-bar .lg-dot{width:11px;height:11px;border-radius:50%;display:inline-block}
@@ -1016,7 +1022,12 @@ function chipHTML(j,pid,g,ji){
     div.setAttribute('title',_ttl);
     div.setAttribute('onclick',"if(!(event.target.closest&&event.target.closest('.aw-del'))){openDetail('"+j.id+"')}");
     var _cw=(dlAfter(j,g)?'<span class="awc-warn" title="Na deadline">⚠</span>':'')+(j.revised?'<span class="awc-warn" title="Herzien">✎</span>':'');
-    div.innerHTML='<div class="aw-body awc"><div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div><div class="awc-sub">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+escapeHtml(j.klant||'')+spanBadgeC+'<span class="awc-hrs">'+j.hrs+'u</span></div></div>';
+    div.innerHTML='<div class="aw-body awc">'
+      +'<div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'
+      +'<div class="awc-fase">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+(j.desc?escapeHtml(cleanDesc(j.nr,j.desc)):'')+'</div>'
+      +'<div class="awc-sub">'+(j.klant?('<span class="awc-klant">'+escapeHtml(j.klant)+'</span>'):'')+spanBadgeC
+      +'<span class="awc-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</span>'
+      +'</div></div>';
     return div.outerHTML;
   }
   div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+deadlineBadge(j,g)+revBadge(j)+spanBadge+routesHtml+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
