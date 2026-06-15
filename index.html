@@ -384,6 +384,8 @@ body.dragging .wg-cell:not(.drop-ok):not(.drop-no){opacity:.92}
 .mat-badge b{font-size:9px;margin-left:1px}
 .aw-mat{margin-top:3px;font-size:10.5px;display:flex;align-items:center;gap:3px;flex-wrap:wrap;color:var(--t2)}
 .awc-top .mat-badge{font-size:9.5px}
+.nav-open{display:inline-block;font-size:9.5px;font-weight:800;color:#7a4f00;background:#ffe3a3;border:.5px solid #e7b94e;border-radius:4px;padding:1px 5px;line-height:1.4;white-space:nowrap}
+.nav-openline{margin-top:3px}
 .awc-fase b{font-weight:800}
 .awc-klant{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .awc-foot{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
@@ -729,6 +731,7 @@ function load(){
   }catch(e){console.warn('load failed',e);}
   if(!S.events) S.events={};
   if(!S.materiaal) S.materiaal={};
+  if(!S.navOpen) S.navOpen={};
 }
 
 // ════════════════════════════════════════
@@ -1034,12 +1037,12 @@ function chipHTML(j,pid,g,ji){
     div.innerHTML='<div class="aw-body awc">'
       +'<div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+mBadgesHtml(j)+delBtn+'</div>'
       +(j.klant?('<div class="awc-klant2">'+escapeHtml(j.klant)+'</div>'):'')
-      +'<div class="awc-fase">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+(j.desc?escapeHtml(cleanDesc(j.nr,j.desc)):'')+'</div>'
+      +'<div class="awc-fase">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+(j.desc?escapeHtml(cleanDesc(j.nr,j.desc)):'')+'</div>'+navChipHtml(j)
       +'<div class="awc-hrsrow">'+spanBadgeC+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div>'
       +'</div></div>';
     return div.outerHTML;
   }
-  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+deadlineBadge(j,g)+revBadge(j)+spanBadge+routesHtml+matLineHtml(j)+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
+  div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'+klantLine+faseLine+readyBadge(j)+deadlineBadge(j,g)+revBadge(j)+spanBadge+routesHtml+matLineHtml(j)+navChipHtml(j)+(blkHtml?('<div class="aw-blk">'+blkHtml+'</div>'):'')+'<div class="aw-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div></div>';
   return div.outerHTML;
 }
 
@@ -2422,7 +2425,7 @@ render();
 // ========================================
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
 // ========================================
-var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs','bankBacklog','bankLastPonrs','materiaal'];
+var CLOUD_KEYS=['jobs','plan','bw','cnc','dayHrs','workDays','events','history','holidays','cncBacklog','cncLastPonrs','bankBacklog','bankLastPonrs','materiaal','navOpen'];
 var _docRef=null,_applyingRemote=false,_cloudTimer=null,_pendingWrite=false,_lastAppliedTs=0,_cloudReady=false,_lastRemote=null;
 function _mEq(a,b){return JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);}
 function _projectKeys(d){var o={};CLOUD_KEYS.forEach(function(k){if(d&&d[k]!==undefined)o[k]=d[k];});return o;}
@@ -2868,7 +2871,8 @@ function renderMatList(){
   h+='<button class="mbtn" style="font-size:10px;padding:3px 8px;margin-left:auto" onclick="matSample()">Voorbeeldbestand</button>';
   h+='</div>';
   h+='<div id="matPaste" style="display:none;margin:0 0 8px"><div style="font-size:11px;color:var(--t2);margin-bottom:4px">Plak hier de gekopieerde regels uit Navision (Project Middellijst). Inclusief de titelrij met kolomnamen.</div><textarea id="matPasteTa" style="width:100%;height:120px;font-family:monospace;font-size:11px;border:.5px solid var(--line);border-radius:6px;padding:6px" placeholder="Projectnr.\tFase\tSoort\tNr.\tOmschrijving\t...\tCode mijlpaal\t..."></textarea><div style="margin-top:6px"><button class="mbtn ok" style="font-size:11px" onclick="processMatPaste()">Verwerk geplakte lijst</button></div></div>';
-  if(!nMat){ h+='<div style="padding:24px;text-align:center;color:var(--t3)">Nog geen materiaaldata geïmporteerd.<br>Importeer een Navision-export (knop hierboven), of klik op “Voorbeeldbestand” voor het verwachte formaat.</div>'; }
+  if(!nMat && !Object.keys(S.navOpen||{}).length){ h+='<div style="padding:24px;text-align:center;color:var(--t3)">Nog niets geïmporteerd.<br>Plak een Navision-lijst (knop “Plakken uit Navision”) — te-tekenen-fases én materiaal worden automatisch herkend.</div>'; }
+  else if(!nMat){ /* enkel te-tekenen data */ }
   else if(!rows.length){ h+='<div style="padding:24px;text-align:center;color:var(--grn)">✓ Al het materiaal voor de ingeplande fases is binnen.</div>'; }
   else {
     h+='<div style="flex:1;overflow:auto;border:.5px solid var(--line);border-radius:7px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surf2)"><th style="text-align:left;padding:6px 10px">Fase</th><th style="text-align:left;padding:6px 10px">Klant</th><th style="text-align:left;padding:6px 10px">Start banken</th><th style="text-align:left;padding:6px 10px">🏭 Atelier</th><th style="text-align:left;padding:6px 10px">🚚 Werf</th><th style="text-align:left;padding:6px 10px">Openstaande artikels</th></tr></thead><tbody>';
@@ -2881,20 +2885,32 @@ function renderMatList(){
     });
     h+='</tbody></table></div>';
   }
+  var _no=S.navOpen||{}; var _noKeys=Object.keys(_no);
+  if(_noKeys.length){
+    var _byJob={}; (S.jobs||[]).forEach(function(j){ if(j.fase) _byJob[mGk(j.project,j.fase)]=j; });
+    var _list=_noKeys.map(function(k){ var p=k.split('||'); var j=_byJob[k]; return {project:p[0],fase:p[1],klant:j?j.klant:'',oms:_no[k].oms||'',label:_no[k].label||''}; });
+    _list.sort(function(a,b){ return (a.project+a.fase).localeCompare(b.project+b.fase); });
+    h+='<div style="margin-top:12px;font-weight:800;font-size:12px">\uD83D\uDCD0 Nog te tekenen / openstaand ('+_list.length+')</div>';
+    h+='<div style="max-height:30vh;overflow:auto;border:.5px solid var(--line);border-radius:7px;margin-top:4px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--surf2)"><th style="text-align:left;padding:5px 10px">Fase</th><th style="text-align:left;padding:5px 10px">Klant</th><th style="text-align:left;padding:5px 10px">Omschrijving</th><th style="text-align:left;padding:5px 10px">Status</th></tr></thead><tbody>';
+    _list.forEach(function(r){ h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:5px 10px;font-weight:700">'+escapeHtml(r.project+' \u00B7 '+r.fase)+'</td><td style="padding:5px 10px">'+escapeHtml(r.klant||'\u2013')+'</td><td style="padding:5px 10px">'+escapeHtml(r.oms||'')+'</td><td style="padding:5px 10px;color:var(--amb);font-weight:700">'+escapeHtml(r.label||'')+'</td></tr>'; });
+    h+='</tbody></table></div>';
+  }
   h+='<div class="mact" style="margin-top:10px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';
   m.innerHTML=h;
 }
+function navOpenFor(j){ if(!j||!S.navOpen)return null; return S.navOpen[mGk(j.project,j.fase)]||null; }
+function navChipHtml(j){ var o=navOpenFor(j); if(!o||(j&&j.done))return ''; var lbl=/teken/i.test(o.label||'')?'te tekenen':((o.label||'openstaand').toLowerCase()); return '<div class="nav-openline"><span class="nav-open" title="Navision openstaand: '+escapeHtml(o.label||'')+(o.oms?(' \u2014 '+escapeHtml(o.oms)):'')+'">\uD83D\uDCD0 '+escapeHtml(lbl)+'</span></div>'; }
 function importMateriaal(rows){
   rows=rows.filter(function(r){return r&&r.some(function(c){return String(c).trim();});});
-  if(rows.length<2){toast('Geen materiaaldata');return;}
+  if(rows.length<2){toast('Geen data');return;}
   var hi=0;
   for(var i=0;i<Math.min(6,rows.length);i++){ var jn=rows[i].map(function(c){return String(c).toLowerCase();}).join('|'); if(jn.indexOf('artikel')>=0||jn.indexOf('materiaal')>=0||jn.indexOf('bestemming')>=0||jn.indexOf('mijlpaal')>=0||jn.indexOf('ponr')>=0||(jn.indexOf('projectnr')>=0&&jn.indexOf('fase')>=0)){hi=i;break;} }
   var hdr=rows[hi].map(function(h){return String(h).trim().toLowerCase();});
   var col=function(){for(var a=0;a<arguments.length;a++){var n=arguments[a];var idx=hdr.findIndex(function(h){return h.indexOf(String(n).toLowerCase())>=0;});if(idx>=0)return idx;}return -1;};
-  var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','mijlpaal','milestone','locatie','lokatie','levering naar','leveradres'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad','status'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iKl=col('klant');
-  if(iArt<0||(iPonr<0&&iFase<0)){ alert('Materiaal-import kon niet worden uitgevoerd.\n\nVerwachte kolommen: ponr (of project + fase), artikel, bestemming, binnen, leverdatum.\n\nGevonden kolommen:\n'+hdr.join(', ')); return; }
+  var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','mijlpaal','milestone'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iType=col('type verwerking','verwerking'),iExtra=col('extra status');
+  if(iFase<0&&iPonr<0){ alert('Import kon niet worden uitgevoerd.\n\nVerwachte kolommen: ponr (of Projectnr. + Fase).\n\nGevonden kolommen:\n'+hdr.join(', ')); return; }
   function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
-  var mat={},cnt=0;
+  var mat={},open={},cM=0,cO=0;
   rows.slice(hi+1).forEach(function(row){
     if(!row||row.every(function(c){return !c;}))return;
     var project='',fase='';
@@ -2903,23 +2919,39 @@ function importMateriaal(rows){
     if(iFase>=0&&String(row[iFase]).trim())fase=String(row[iFase]).trim();
     if(!fase)return;
     var key=mGk(project,fase);
-    var bestRaw=iBest>=0?String(row[iBest]||''):'';
-    var dest=/werf|site|plaats|montage|extern/i.test(bestRaw)?'werf':'atelier';
+    var bestRaw=iBest>=0?String(row[iBest]||'').trim():'';
+    var typeRaw=iType>=0?String(row[iType]||'').toLowerCase():'';
+    var extraRaw=iExtra>=0?String(row[iExtra]||'').trim():'';
     var art=iArt>=0?String(row[iArt]||'').trim():'';
     var lev=iLev>=0?String(row[iLev]||'').trim():'';
-    var binnen=iIn>=0?mIsIn(row[iIn]):false;
-    if(!mat[key])mat[key]=[];
-    mat[key].push({artikel:art,bestemming:dest,binnen:binnen,lever:lev});
-    cnt++;
+    var isMat;
+    if(bestRaw!==''){ isMat=true; }
+    else if(iType>=0){ isMat=/inkoop|magazijn|aankoop/.test(typeRaw); }
+    else { isMat=false; }
+    if(isMat){
+      var dest=/werf|site|plaats|montage|extern/i.test(bestRaw)?'werf':'atelier';
+      var binnen=iIn>=0?mIsIn(row[iIn]):false;
+      if(!mat[key])mat[key]=[];
+      mat[key].push({artikel:art,bestemming:dest,binnen:binnen,lever:lev});
+      cM++;
+    } else {
+      open[key]={label:(extraRaw||'openstaand'),oms:art};
+      cO++;
+    }
   });
-  var _projIn={}; Object.keys(mat).forEach(function(k){_projIn[(k.split('||')[0]||'')]=1;});
-  var _merged={}; Object.keys(S.materiaal||{}).forEach(function(k){ if(!_projIn[(k.split('||')[0]||'')]) _merged[k]=S.materiaal[k]; });
-  Object.keys(mat).forEach(function(k){ _merged[k]=mat[k]; });
-  S.materiaal=_merged;
+  var pM={}; Object.keys(mat).forEach(function(k){pM[(k.split('||')[0]||'')]=1;});
+  var mm={}; Object.keys(S.materiaal||{}).forEach(function(k){ if(!pM[(k.split('||')[0]||'')]) mm[k]=S.materiaal[k]; });
+  Object.keys(mat).forEach(function(k){ mm[k]=mat[k]; });
+  S.materiaal=mm;
+  var pO={}; Object.keys(open).forEach(function(k){pO[(k.split('||')[0]||'')]=1;});
+  var oo={}; Object.keys(S.navOpen||{}).forEach(function(k){ if(!pO[(k.split('||')[0]||'')]) oo[k]=S.navOpen[k]; });
+  Object.keys(open).forEach(function(k){ oo[k]=open[k]; });
+  S.navOpen=oo;
   if(typeof cloudSave==='function')cloudSave();
   render();
   if(document.getElementById('matModal'))renderMatList();
-  toast('Materiaal: '+cnt+' regels · '+Object.keys(mat).length+' fases');
+  var parts=[]; if(cM)parts.push(cM+' materiaal'); if(cO)parts.push(cO+' te tekenen/openstaand'); if(!parts.length)parts.push('geen herkende regels');
+  toast('Navision: '+parts.join(' · '));
 }
 function handleMatImport(e){
   var f=e.target.files[0];if(!f)return;
