@@ -1198,10 +1198,11 @@ function resetAllData(){
 }
 function renderSPBadge(){
   const aid=allAssigned();
-  const n=S.jobs.filter(j=>!j.blocked&&!allAssigned().has(j.id)).length;
+  const n=S.jobs.filter(j=>!j.done&&!j.blocked&&!allAssigned().has(j.id)).length;
   const el=document.getElementById('sp-cnt');
   if(el){el.textContent=n;el.classList.toggle('hidden',n===0);}
 }
+function toggleSpGroup(key){if(!key)return;S.spClosed=S.spClosed||{};S.spClosed[key]=!S.spClosed[key];try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}renderSP();}
 function renderSP(){
   const aid=allAssigned();
   const q=(document.getElementById('sp-q')?.value||'').toLowerCase().trim();
@@ -1239,6 +1240,9 @@ function renderSP(){
     if(!a.dl)return 1;if(!b.dl)return -1;
     return a.dl-b.dl;
   });
+  S.spClosed=S.spClosed||{};
+  var _curGk={};Object.keys(grps).forEach(function(k){_curGk[k]=1;});
+  Object.keys(S.spClosed).forEach(function(k){if(!_curGk[k])delete S.spClosed[k];});
   if(!sorted.length){
     document.getElementById('sp-list').innerHTML='<div class="sp-empty">✓ Geen orders in wachtrij</div>';
     return;
@@ -1295,8 +1299,9 @@ function renderSP(){
         </div>
       </div>`;
     }).join('');
-    return`<div class="sp-proj" id="spg${gi}" style="border-left:3px solid ${wc||'var(--line)'}">
-      <div class="sp-ph" onclick="document.getElementById('spg${gi}').classList.toggle('closed')">
+    var gk=(g.klant||'')+'__'+(g.proj||'');
+    return`<div class="sp-proj${S.spClosed[gk]?' closed':''}" id="spg${gi}" data-gk="${escapeHtml(gk)}" style="border-left:3px solid ${wc||'var(--line)'}">
+      <div class="sp-ph" onclick="toggleSpGroup(this.closest('.sp-proj').dataset.gk)">
         <span class="sp-pklant">${g.klant}</span>
         <span class="sp-pnr">${g.proj}</span>
         <span style="font-size:9px;color:var(--t2);margin-left:auto;display:flex;gap:5px;align-items:center">
