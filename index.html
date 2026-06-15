@@ -377,7 +377,9 @@ body.dragging .wg-cell:not(.drop-ok):not(.drop-no){opacity:.92}
 .rdy-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .awc-sub{font-size:10px;color:var(--t2);margin-top:2px;display:flex;align-items:center;gap:5px}
 .awc-hrs{margin-left:auto;font-weight:700;color:var(--ink)}
-.awc-fase{font-size:10.5px;color:var(--ink);line-height:1.3;margin-top:2px;word-break:break-word}
+.awc-klant2{font-size:11px;font-weight:700;color:var(--ink);line-height:1.3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.awc-fase{font-size:10.5px;color:var(--ink);line-height:1.3;margin-top:1px;word-break:break-word}
+.awc-hrsrow{display:flex;align-items:center;gap:2px;margin-top:4px}
 .awc-fase b{font-weight:800}
 .awc-klant{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .awc-foot{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
@@ -995,7 +997,7 @@ function chipHTML(j,pid,g,ji){
   }
   const werfColor=kColor(j.klant);
   div.className='aw '+jtype(j)+(j.blocked?' blocked':'')+(j.groupId?' is-split':'');
-  if(werfColor&&!j.blocked){div.style.borderLeft='4px solid '+werfColor;}
+  if(werfColor&&!j.blocked){div.style.borderLeft='4px solid '+werfColor;div.style.background=werfColor+'40';}
   div.draggable=!j.blocked;
   div.setAttribute('ondragstart',"ds(event,'"+j.id+"','"+pkey(pid,g)+"')");
   div.setAttribute('ondragend','de()');
@@ -1024,9 +1026,9 @@ function chipHTML(j,pid,g,ji){
     var _cw=(dlAfter(j,g)?'<span class="awc-warn" title="Na deadline">⚠</span>':'')+(j.revised?'<span class="awc-warn" title="Herzien">✎</span>':'');
     div.innerHTML='<div class="aw-body awc">'
       +'<div class="awc-top">'+_dot+_cw+'<span class="aw-proj">'+projTxt+'</span>'+delBtn+'</div>'
+      +(j.klant?('<div class="awc-klant2">'+escapeHtml(j.klant)+'</div>'):'')
       +'<div class="awc-fase">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+(j.desc?escapeHtml(cleanDesc(j.nr,j.desc)):'')+'</div>'
-      +'<div class="awc-sub">'+(j.klant?('<span class="awc-klant">'+escapeHtml(j.klant)+'</span>'):'')+spanBadgeC
-      +'<span class="awc-foot">'+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</span>'
+      +'<div class="awc-hrsrow">'+spanBadgeC+hrsMin+'<input class="hrs-inp" type="text" value="'+j.hrs+'" draggable="false" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" ondragstart="event.stopPropagation();event.preventDefault()" onkeydown="if(event.key===&#39;Enter&#39;){event.preventDefault();this.blur();}" onchange="setHrsAbs(&#39;'+j.id+'&#39;,this.value,&#39;'+pid+'&#39;,'+g+')"><span class="hrs-u">u</span>'+hrsPlus+'</div>'
       +'</div></div>';
     return div.outerHTML;
   }
