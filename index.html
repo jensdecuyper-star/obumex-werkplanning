@@ -2862,10 +2862,12 @@ function renderMatList(){
   var h='<div class="mh">📦 Materiaal-opvolging ('+rows.length+') <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">×</button></div>';
   h+='<div style="display:flex;align-items:center;gap:10px;margin:2px 0 8px;flex-wrap:wrap;font-size:11px;color:var(--t2)">';
   h+='<label class="tbtn" style="cursor:pointer;font-size:11px">↑ Navision-bestand importeren<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleMatImport(event)"></label>';
+  h+='<button class="tbtn" style="font-size:11px" onclick="toggleMatPaste()">📋 Plakken uit Navision</button>';
   h+='<span>'+nMat+' fases met materiaaldata</span>';
   h+='<span><span style="color:var(--red)">●</span> niet binnen, ≤1 week tot banken &nbsp;<span style="color:var(--amb)">●</span> ≤2 weken &nbsp;<span style="color:var(--t3)">●</span> verder weg</span>';
   h+='<button class="mbtn" style="font-size:10px;padding:3px 8px;margin-left:auto" onclick="matSample()">Voorbeeldbestand</button>';
   h+='</div>';
+  h+='<div id="matPaste" style="display:none;margin:0 0 8px"><div style="font-size:11px;color:var(--t2);margin-bottom:4px">Plak hier de gekopieerde regels uit Navision (Project Middellijst). Inclusief de titelrij met kolomnamen.</div><textarea id="matPasteTa" style="width:100%;height:120px;font-family:monospace;font-size:11px;border:.5px solid var(--line);border-radius:6px;padding:6px" placeholder="Projectnr.\tFase\tSoort\tNr.\tOmschrijving\t...\tCode mijlpaal\t..."></textarea><div style="margin-top:6px"><button class="mbtn ok" style="font-size:11px" onclick="processMatPaste()">Verwerk geplakte lijst</button></div></div>';
   if(!nMat){ h+='<div style="padding:24px;text-align:center;color:var(--t3)">Nog geen materiaaldata geïmporteerd.<br>Importeer een Navision-export (knop hierboven), of klik op “Voorbeeldbestand” voor het verwachte formaat.</div>'; }
   else if(!rows.length){ h+='<div style="padding:24px;text-align:center;color:var(--grn)">✓ Al het materiaal voor de ingeplande fases is binnen.</div>'; }
   else {
@@ -2886,10 +2888,10 @@ function importMateriaal(rows){
   rows=rows.filter(function(r){return r&&r.some(function(c){return String(c).trim();});});
   if(rows.length<2){toast('Geen materiaaldata');return;}
   var hi=0;
-  for(var i=0;i<Math.min(6,rows.length);i++){ var jn=rows[i].map(function(c){return String(c).toLowerCase();}).join('|'); if(jn.indexOf('artikel')>=0||jn.indexOf('materiaal')>=0||jn.indexOf('bestemming')>=0||jn.indexOf('ponr')>=0){hi=i;break;} }
+  for(var i=0;i<Math.min(6,rows.length);i++){ var jn=rows[i].map(function(c){return String(c).toLowerCase();}).join('|'); if(jn.indexOf('artikel')>=0||jn.indexOf('materiaal')>=0||jn.indexOf('bestemming')>=0||jn.indexOf('mijlpaal')>=0||jn.indexOf('ponr')>=0||(jn.indexOf('projectnr')>=0&&jn.indexOf('fase')>=0)){hi=i;break;} }
   var hdr=rows[hi].map(function(h){return String(h).trim().toLowerCase();});
   var col=function(){for(var a=0;a<arguments.length;a++){var n=arguments[a];var idx=hdr.findIndex(function(h){return h.indexOf(String(n).toLowerCase())>=0;});if(idx>=0)return idx;}return -1;};
-  var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','locatie','lokatie','levering naar','leveradres','naar'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad','status'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iKl=col('klant');
+  var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','mijlpaal','milestone','locatie','lokatie','levering naar','leveradres'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad','status'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iKl=col('klant');
   if(iArt<0||(iPonr<0&&iFase<0)){ alert('Materiaal-import kon niet worden uitgevoerd.\n\nVerwachte kolommen: ponr (of project + fase), artikel, bestemming, binnen, leverdatum.\n\nGevonden kolommen:\n'+hdr.join(', ')); return; }
   function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
   var mat={},cnt=0;
@@ -2910,7 +2912,10 @@ function importMateriaal(rows){
     mat[key].push({artikel:art,bestemming:dest,binnen:binnen,lever:lev});
     cnt++;
   });
-  S.materiaal=mat;
+  var _projIn={}; Object.keys(mat).forEach(function(k){_projIn[(k.split('||')[0]||'')]=1;});
+  var _merged={}; Object.keys(S.materiaal||{}).forEach(function(k){ if(!_projIn[(k.split('||')[0]||'')]) _merged[k]=S.materiaal[k]; });
+  Object.keys(mat).forEach(function(k){ _merged[k]=mat[k]; });
+  S.materiaal=_merged;
   if(typeof cloudSave==='function')cloudSave();
   render();
   if(document.getElementById('matModal'))renderMatList();
@@ -2922,6 +2927,8 @@ function handleMatImport(e){
   else {var r=new FileReader();r.onload=function(ev){importMateriaal(ev.target.result.split('\n').map(function(l){return l.split(/[,;\t]/).map(function(c){return c.replace(/^"|"$/g,'').trim();});}));};r.readAsText(f,'UTF-8');}
   e.target.value='';
 }
+function toggleMatPaste(){ var p=document.getElementById('matPaste'); if(p){ p.style.display=(p.style.display==='none'?'block':'none'); if(p.style.display==='block'){var t=document.getElementById('matPasteTa'); if(t)t.focus();} } }
+function processMatPaste(){ var t=document.getElementById('matPasteTa'); var txt=t?t.value:''; if(!txt.trim()){toast('Niets geplakt');return;} var rows=txt.split(/\r?\n/).map(function(l){ return l.indexOf('\t')>=0 ? l.split('\t') : l.split(/[;,]/); }).map(function(r){return r.map(function(c){return c.replace(/^"|"$/g,'').trim();});}); importMateriaal(rows); }
 function matSample(){
   var csv='ponr;artikel;bestemming;binnen;leverdatum\n'
    +'P25-0227-120200;Inox werkblad 3000x650;atelier;nee;22-06-2026\n'
