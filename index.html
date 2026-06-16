@@ -880,6 +880,7 @@ function render(){
   S.wo=0;
   if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
   if(!S.bankBacklog)S.bankBacklog=[];
+  if(typeof cleanupPastBankwerk==='function') cleanupPastBankwerk();
   computeSpans();
   renderGrid();
   if(_floorOpen) renderFloor();
@@ -1591,7 +1592,7 @@ function importRows(rows){
     Object.keys(S.plan).forEach(function(k){
       var arr=S.plan[k]; if(!arr)return; var idx=arr.indexOf(j.id); if(idx<0)return;
       var pp=k.split('_'); var gg=(parseInt(pp[0],10)||0)*7+(parseInt(pp[pp.length-1],10)||0);
-      if(gg>_today){ arr.splice(idx,1); pulled++; if(!arr.length)delete S.plan[k]; }
+      if(gg>=_today){ arr.splice(idx,1); pulled++; if(!arr.length)delete S.plan[k]; }
       else { anyPast=true; }
     });
     if(!anyPast){ j.done=true; removed++; } // niets in verleden -> uit wachtrij
@@ -2761,6 +2762,22 @@ function routeCelShort(c){c=(c||'').trim();if(/bankwerk/i.test(c))return 'BW';if
 function routeAtBankwerk(cel){return /bankwerk/i.test(cel||'');}
 function celStage(c){ c=String(c||''); if(/tussencontrole|schuren|kleur|vernis|lak/i.test(c))return 2; if(/bankwerk/i.test(c))return 1; return 0; }
 function pastBankwerk(routes){ var rs=routes||[]; if(!rs.length)return false; return rs.every(function(r){return celStage(r.cel)>=2;}); }
+function cleanupPastBankwerk(){
+  if(!S.jobs||!S.plan)return false;
+  var today=(typeof gToday==='function')?gToday():0; var changed=false;
+  S.jobs.forEach(function(j){
+    if(j.done||!j.fase||!pastBankwerk(j.routes))return;
+    var anyPast=false;
+    Object.keys(S.plan).forEach(function(k){
+      var arr=S.plan[k]; if(!arr)return; var idx=arr.indexOf(j.id); if(idx<0)return;
+      var pp=k.split('_'); var gg=(parseInt(pp[0],10)||0)*7+(parseInt(pp[pp.length-1],10)||0);
+      if(gg>=today){ arr.splice(idx,1); changed=true; if(!arr.length)delete S.plan[k]; }
+      else { anyPast=true; }
+    });
+    if(!anyPast){ j.done=true; changed=true; } // voorbij bankwerk + niets in verleden -> uit wachtrij
+  });
+  return changed;
+}
 function dedupeRoutes(rs){
   var by={},order=[];
   (rs||[]).forEach(function(r){
