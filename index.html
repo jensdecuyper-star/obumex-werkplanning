@@ -913,14 +913,14 @@ function renderCap(){
 function renderGrid(){
   const people=S.bw;
   const lcol='minmax(118px,138px)';
-  const pcols=`repeat(${Math.max(1,people.length)},minmax(150px,1fr))`;
+  const pcols=`repeat(${Math.max(1,people.length)},minmax(0,1fr))`;
   const cols=`${lcol} ${pcols}`;
-  const minW=138+people.length*150;
+  const minW=Math.max(700,138+people.length*78);
   const todayG=gToday();
   const startG=_showPast?todayG-10:todayG;
   const endG=todayG+70;
   const todayStr=new Date().toDateString();
-  let h=`<div class="wg" style="min-width:${minW}px">`;
+  let h=`<div class="wg" style="min-width:${minW}px;width:100%">`;
   h+=`<div class="wg-head" style="display:grid;grid-template-columns:${cols}">`;
   h+=`<div class="wg-corner"><button class="past-toggle" onclick="toggleShowPast()">${_showPast?'▾ verberg verleden':'▸ toon verleden'}</button><button class="past-toggle" onclick="toggleShowWeekend()">${_showWeekend?'▾ verberg weekend':'☼ toon weekend'}</button></div>`;
   people.forEach(p=>{
@@ -1582,8 +1582,11 @@ function importRows(rows){
   var _today=(typeof gToday==='function')?gToday():0; var removed=0, pulled=0;
   if(importKeys.size>0) S.jobs.forEach(function(j){
     if(j.done||!j.fase)return;
-    if(importKeys.has(gk(j.project,j.fase)))return; // fase nog in import -> behouden
-    // fase verdwenen uit import: toekomstige inplanning eruit, verleden behouden
+    var _k=gk(j.project,j.fase);
+    var _vanished=!importKeys.has(_k);
+    var _pastBw=(!_vanished && imp[_k] && pastBankwerk(imp[_k].routes));
+    if(!_vanished && !_pastBw)return; // nog in import én nog niet voorbij bankwerk -> behouden
+    // verdwenen uit import OF voorbij bankwerk: toekomst eruit, verleden behouden
     var anyPast=false;
     Object.keys(S.plan).forEach(function(k){
       var arr=S.plan[k]; if(!arr)return; var idx=arr.indexOf(j.id); if(idx<0)return;
@@ -2756,6 +2759,8 @@ function openHold(){
 // ── Fase-model: migratie + route-weergave ──
 function routeCelShort(c){c=(c||'').trim();if(/bankwerk/i.test(c))return 'BW';if(/cnc/i.test(c))return 'CNC';return c;}
 function routeAtBankwerk(cel){return /bankwerk/i.test(cel||'');}
+function celStage(c){ c=String(c||''); if(/tussencontrole|schuren|kleur|vernis|lak/i.test(c))return 2; if(/bankwerk/i.test(c))return 1; return 0; }
+function pastBankwerk(routes){ var rs=routes||[]; if(!rs.length)return false; return rs.every(function(r){return celStage(r.cel)>=2;}); }
 function dedupeRoutes(rs){
   var by={},order=[];
   (rs||[]).forEach(function(r){
