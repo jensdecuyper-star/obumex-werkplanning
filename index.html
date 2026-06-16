@@ -1579,10 +1579,19 @@ function importRows(rows){
   var importKeys=new Set(order);
   var existing=new Map();
   S.jobs.forEach(function(j){ if(j.fase) existing.set(gk(j.project,j.fase),j); });
-  var planned=allAssigned(); var removed=0;
+  var _today=(typeof gToday==='function')?gToday():0; var removed=0, pulled=0;
   if(importKeys.size>0) S.jobs.forEach(function(j){
     if(j.done||!j.fase)return;
-    if(!importKeys.has(gk(j.project,j.fase)) && !planned.has(j.id)){ j.done=true; removed++; }
+    if(importKeys.has(gk(j.project,j.fase)))return; // fase nog in import -> behouden
+    // fase verdwenen uit import: toekomstige inplanning eruit, verleden behouden
+    var anyPast=false;
+    Object.keys(S.plan).forEach(function(k){
+      var arr=S.plan[k]; if(!arr)return; var idx=arr.indexOf(j.id); if(idx<0)return;
+      var pp=k.split('_'); var gg=(parseInt(pp[0],10)||0)*7+(parseInt(pp[pp.length-1],10)||0);
+      if(gg>_today){ arr.splice(idx,1); pulled++; if(!arr.length)delete S.plan[k]; }
+      else { anyPast=true; }
+    });
+    if(!anyPast){ j.done=true; removed++; } // niets in verleden -> uit wachtrij
   });
   var added=0,upd=0,revived=0,revCnt=0; var dlChanges=[];
   order.forEach(function(key){
@@ -1608,6 +1617,7 @@ function importRows(rows){
   if(dlChanges.length)parts.push(dlChanges.length+' deadline gewijzigd');
   if(revCnt)parts.push(revCnt+' herzien');
   if(removed)parts.push(removed+' verwijderd uit wachtrij');
+  if(pulled)parts.push(pulled+' toekomst-inplanning verwijderd');
   if(!parts.length)parts.push('Geen wijzigingen');
   var _cncSnap=(typeof backlogSnapshotFromImport==='function')?backlogSnapshotFromImport('cnc',imp,order):null;
   var _bankSnap=(typeof backlogSnapshotFromImport==='function')?backlogSnapshotFromImport('bank',imp,order):null;
