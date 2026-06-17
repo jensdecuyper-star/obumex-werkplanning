@@ -428,13 +428,13 @@ function parseProposSheet(arrbuf){
   var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});if(!rows||!rows.length)return null;
   var hdr=rows[0].map(function(x){return String(x).replace(/\s+/g,' ').trim();});
   function ci(name){return hdr.indexOf(name);}
-  var iP=ci('PONr'),iVC=ci('VC CP TT'),iNC=ci('NC CP TT'),iGE=ci('Geplande einddatum (cel)'),iWE=ci('Werkelijke eind (cel)'),iCel=ci('Cel'),iOms=ci('Omschrijving');
+  var iP=ci('PONr'),iVC=ci('VC CP TT'),iNC=ci('NC CP TT'),iGE=ci('Geplande einddatum (cel)'),iWE=ci('Werkelijke eind (cel)'),iCel=ci('Cel'),iOms=ci('Omschrijving'),iWSP=ci('NC WSP'),iDoor=ci('NC Doorlooptijd');
   if(iGE<0)iGE=hdr.findIndex(function(x){return /geplande eind/i.test(x);});
   if(iWE<0)iWE=hdr.findIndex(function(x){return /werkelijke eind/i.test(x);});
   if(iP<0||iVC<0||iNC<0)return null;
   var map={};
   for(var r=1;r<rows.length;r++){var row=rows[r];var po=String(row[iP]||'').trim();if(!po)continue;
-    map[po+'#'+r]={po:po,vc:_pnum(row[iVC]),nc:_pnum(row[iNC]),ge:iGE>=0?String(row[iGE]||'').trim():'',we:iWE>=0?String(row[iWE]||'').trim():'',cel:iCel>=0?String(row[iCel]||'').trim():'',oms:iOms>=0?String(row[iOms]||'').trim():''};}
+    map[po+'#'+r]={po:po,vc:_pnum(row[iVC]),nc:_pnum(row[iNC]),wsp:iWSP>=0?_pnum(row[iWSP]):0,door:iDoor>=0?_pnum(row[iDoor]):0,ge:iGE>=0?String(row[iGE]||'').trim():'',we:iWE>=0?String(row[iWE]||'').trim():'',cel:iCel>=0?String(row[iCel]||'').trim():'',oms:iOms>=0?String(row[iOms]||'').trim():''};}
   return map;
 }
 function handleEffFile(ev){
@@ -456,23 +456,45 @@ function handleEffFile(ev){
 function renderEff(){
   var box=$('effBox');if(!box)return;
   if(!PROPOSUREN||!Object.keys(PROPOSUREN).length){
-    box.innerHTML='<p class="hint" style="color:#b07d0a">Nog geen Propos-uren ingelezen. Exporteer in Propos het scherm <b>Overzicht &#8594; Urenregistratie</b> en upload het hieronder — dan verschijnt per project ingepland (VC) vs. effectief (NC) met afwijking.</p>';
+    box.innerHTML='<p class="hint" style="color:#b07d0a">Nog geen Propos-uren ingelezen. Exporteer in Propos <b>Overzicht &#8594; Urenregistratie</b> (bij voorkeur het tabblad <b>VC en NC</b> voor een volledig beeld) en upload het hieronder. Je krijgt dan leverbetrouwbaarheid, calculatie-afwijking, wachten-vs-werken en achterstand per werkpost.</p>';
     return;
   }
-  var byP={},onT=0,late=0,nDate=0;
-  Object.keys(PROPOSUREN).forEach(function(po){var e=PROPOSUREN[po];var b=ponrBase(e.po||po);if(!byP[b])byP[b]={vc:0,nc:0,oms:e.oms};byP[b].vc+=e.vc;byP[b].nc+=e.nc;
-    var g=_pdate(e.ge),w=_pdate(e.we);if(g&&w){nDate++;if(w.setHours(0,0,0,0)<=g.setHours(0,0,0,0))onT++;else late++;}});
-  function klantOf(bp,oms){if(_byProj&&_byProj[bp]&&_byProj[bp][0]&&_byProj[bp][0].klant)return _byProj[bp][0].klant;var c=String(oms||'').split(',');return c.length>1?c.slice(1).join(',').trim():'';}
+  var ents=Object.keys(PROPOSUREN).map(function(k){return PROPOSUREN[k];});
+  var tVC=0,tNC=0,tWSP=0,onT=0,late=0,nDate=0,dlSum=0,byP={},byCel={};
+  function klantOf(bp,oms){if(_byProj&&_byProj[bp]&&_byProj[bp][0]&&_byProj[bp][0].klant)return _byProj[bp][0].klant;var c=String(oms||'').split(',');return c.length>1?c.slice(1).join(',').trim():(c[0]||'');}
+  ents.forEach(function(e){
+    tVC+=e.vc;tNC+=e.nc;tWSP+=(e.wsp||0);
+    var b=ponrBase(e.po);if(!byP[b])byP[b]={vc:0,nc:0,oms:e.oms};byP[b].vc+=e.vc;byP[b].nc+=e.nc;
+    var cel=e.cel||'(onbekend)';if(!byCel[cel])byCel[cel]={n:0,late:0,nc:0,dl:0};byCel[cel].n++;byCel[cel].nc+=e.nc;
+    var g=_pdate(e.ge),w=_pdate(e.we);
+    if(g&&w){var gg=g.setHours(0,0,0,0),ww=w.setHours(0,0,0,0);nDate++;if(ww<=gg){onT++;}else{late++;var d=Math.round((ww-gg)/864e5);dlSum+=d;byCel[cel].late++;byCel[cel].dl+=d;}}
+  });
+  var leverPct=nDate?Math.round(onT/nDate*100):0;
+  var calcPct=tVC?Math.round((tNC-tVC)/tVC*100):0;
+  var waitPct=(tWSP+tNC)?Math.round(tWSP/(tWSP+tNC)*100):0;
+  var avgLate=late?Math.round(dlSum/late):0;
+  function stat(lab,val,sub,tone){var c=tone==='bad'?'#a23b3b':(tone==='good'?'#1d6b46':'#111');return '<div style="flex:1;min-width:130px;border:1px solid var(--line);border-radius:8px;padding:10px 12px"><div class="hint" style="margin:0 0 4px">'+lab+'</div><div style="font-size:21px;font-weight:600;color:'+c+'">'+val+'</div><div class="hint" style="margin-top:3px">'+(sub||'')+'</div></div>';}
+  var h='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">';
+  h+=stat('Leverbetrouwbaarheid',leverPct+'%',late+' van '+nDate+' te laat',leverPct>=85?'good':(leverPct>=70?'':'bad'));
+  h+=stat('Calculatie-afwijking',(calcPct>0?'+':'')+calcPct+'%','werkelijk t.o.v. calculatie',calcPct>15?'bad':(calcPct<-5?'good':''));
+  h+=stat('Aandeel wachttijd',waitPct+'%','van doorlooptijd = wachten',waitPct>=80?'bad':'');
+  h+=stat('Gem. dagen te laat',avgLate+' d','over '+late+' late fases',avgLate>10?'bad':'');
+  h+='</div>';
   var rows=Object.keys(byP).map(function(b){return {bp:b,vc:byP[b].vc,nc:byP[b].nc,oms:byP[b].oms};});
   rows.sort(function(a,b){return (b.nc-b.vc)-(a.nc-a.vc);});
-  var tp=0,te=0;rows.forEach(function(r){tp+=r.vc;te+=r.nc;});
-  var h='';
-  if(nDate){var pct=Math.round(onT/(onT+late)*100);h+='<p class="hint" style="margin:0 0 8px"><b>Leverbetrouwbaarheid (Propos):</b> '+pct+'% op tijd — '+late+' van '+nDate+' fases later dan gepland klaar.</p>';}
-  h+='<table><thead><tr><th>Project</th><th>Klant</th><th class="r">Ingepland (VC)</th><th class="r">Effectief (NC)</th><th class="r">Afwijking</th></tr></thead><tbody>';
-  rows.forEach(function(r){var df=r.vc?Math.round((r.nc-r.vc)/r.vc*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td>'+klantOf(r.bp,r.oms)+'</td><td class="r">'+r.vc.toFixed(1)+' u</td><td class="r">'+r.nc.toFixed(1)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
-  var tdf=tp?Math.round((te-tp)/tp*100):0;
-  h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td></td><td class="r"><b>'+tp.toFixed(1)+' u</b></td><td class="r"><b>'+te.toFixed(1)+' u</b></td><td class="r"><b>'+(tdf>0?'+':'')+tdf+'%</b></td></tr>';
+  h+='<div style="font-weight:600;font-size:12.5px;margin:4px 0 5px">Calculatie vs. werkelijk per project</div>';
+  h+='<table><thead><tr><th>Project</th><th>Klant</th><th class="r">Calc (VC)</th><th class="r">Werkelijk (NC)</th><th class="r">Afwijking</th></tr></thead><tbody>';
+  rows.slice(0,14).forEach(function(r){var df=r.vc?Math.round((r.nc-r.vc)/r.vc*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td>'+klantOf(r.bp,r.oms)+'</td><td class="r">'+r.vc.toFixed(1)+' u</td><td class="r">'+r.nc.toFixed(1)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
+  h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td></td><td class="r"><b>'+tVC.toFixed(1)+' u</b></td><td class="r"><b>'+tNC.toFixed(1)+' u</b></td><td class="r"><b>'+(calcPct>0?'+':'')+calcPct+'%</b></td></tr></tbody></table>';
+  if(rows.length>14)h+='<p class="hint">+ '+(rows.length-14)+' meer…</p>';
+  var cels=Object.keys(byCel).map(function(c){var o=byCel[c];return {cel:c,n:o.n,late:o.late,nc:o.nc,avg:o.late?Math.round(o.dl/o.late):0};});
+  cels.sort(function(a,b){return b.late-a.late;});
+  h+='<div style="font-weight:600;font-size:12.5px;margin:18px 0 5px">Achterstand per werkpost</div>';
+  h+='<table><thead><tr><th>Werkpost</th><th class="r">Fases</th><th class="r">Te laat</th><th class="r">Gem. dagen te laat</th><th class="r">Werkelijke uren</th></tr></thead><tbody>';
+  cels.forEach(function(c){var col=c.late>0?'#a23b3b':'#555';h+='<tr><td>'+c.cel+'</td><td class="r">'+c.n+'</td><td class="r" style="color:'+col+'">'+c.late+'</td><td class="r">'+(c.avg||'—')+(c.avg?' d':'')+'</td><td class="r">'+c.nc.toFixed(1)+' u</td></tr>';});
   h+='</tbody></table>';
+  h+='<div style="font-weight:600;font-size:12.5px;margin:18px 0 5px">Wachten vs. werken</div>';
+  h+='<p class="hint" style="margin:0">Totaal <b>'+tNC.toFixed(0)+' u</b> effectief gewerkt tegenover <b>'+Math.round(tWSP)+' u</b> wachttijd in de wachtrij — <b>'+waitPct+'%</b> van de doorlooptijd is wachten. De grootste hefboom om sneller te leveren zit dus in het verkorten van die wachttijd (minder onderhanden werk / vlottere doorstroom), niet in harder werken.</p>';
   box.innerHTML=h;
 }
 function snapHistory(today,stageObj,bezet,onTime,stab){
