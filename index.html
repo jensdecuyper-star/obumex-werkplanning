@@ -3123,5 +3123,35 @@ function renderReady(){var m=document.getElementById("readyModal");if(!m)return;
  var fi=document.getElementById("prodFilter");if(fi&&_prodFilter){try{fi.focus();fi.setSelectionRange(fi.value.length,fi.value.length);}catch(e){}}}
 
 </script>
+<script>
+(function(){
+  function init(){
+    if(document.getElementById('propos-strip'))return;
+    var bar=document.createElement('div');
+    bar.id='propos-strip';
+    bar.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 12px;background:#111;color:#fff;font:12px/1.4 system-ui,Arial,sans-serif';
+    var txt=document.createElement('span');txt.id='propos-strip-txt';txt.textContent='Propos: verbinden…';
+    var spacer=document.createElement('span');spacer.style.cssText='flex:1';
+    var b1=document.createElement('a');b1.href='https://github.com/jensdecuyper-star/obumex-werkplanning/actions/workflows/propos-sync.yml';b1.target='_blank';b1.rel='noopener';b1.textContent='🔄 Propos bijwerken';b1.style.cssText='color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:3px 9px';
+    var b2=document.createElement('a');b2.href='dashboard.html';b2.target='_blank';b2.rel='noopener';b2.textContent='📊 Dashboard';b2.style.cssText='color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.45);border-radius:5px;padding:3px 9px';
+    bar.appendChild(txt);bar.appendChild(spacer);bar.appendChild(b1);bar.appendChild(b2);
+    document.body.insertBefore(bar,document.body.firstChild);
+    try{
+      firebase.firestore().doc('planning/propos_live').onSnapshot(function(s){
+        if(!s.exists){txt.textContent='Propos: nog geen data';return;}
+        var p={};try{p=JSON.parse(s.data().payload||'{}');}catch(e){}
+        var otd=(p.otd&&p.otd.pct!=null)?p.otd.pct+'% OTD':'OTD —';
+        var cap=p.capByCellWeek||{};var top='';var topPct=-1;
+        Object.keys(cap).forEach(function(c){var w=cap[c],al=0,lo=0;Object.keys(w).forEach(function(k){al+=(w[k].alloc||0);lo+=(w[k].load||0);});var pct=al?Math.round(lo/al*100):0;if(pct>topPct){topPct=pct;top=c;}});
+        var upd=p.updatedAt?new Date(p.updatedAt):null;
+        txt.textContent='📡 Propos live — '+otd+(top?' · drukste werkpost: '+top+' '+topPct+'%':'')+(upd?' · bijgewerkt '+upd.toLocaleDateString('nl-BE')+' '+upd.toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'}):'');
+      },function(){txt.textContent='Propos: geen verbinding';});
+    }catch(e){txt.textContent='Propos: '+e.message;}
+  }
+  function ready(){ if(document.readyState!=='loading')init(); else document.addEventListener('DOMContentLoaded',init); }
+  if(typeof firebase!=='undefined'&&firebase.apps&&firebase.apps.length){ready();}
+  else{var n=0;var iv=setInterval(function(){if(typeof firebase!=='undefined'&&firebase.apps&&firebase.apps.length){clearInterval(iv);ready();}else if(n++>60){clearInterval(iv);ready();}},200);}
+})();
+</script>
 </body>
 </html>
