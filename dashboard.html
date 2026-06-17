@@ -457,8 +457,9 @@ function _ghRunUrl(){return 'https://github.com/jensdecuyper-star/obumex-werkpla
 function renderEffLive(){
   var box=$('effBox');if(!box)return;
   var P=PLIVE||{},perP=P.perProject||{},perC=P.perCell||{},cap=P.capByCellWeek||{},otd=P.otd||null;
-  var tVC=0,tNC=0;Object.keys(perP).forEach(function(b){tVC+=(perP[b].vc||0);tNC+=(perP[b].nc||0);});
-  var tWork=0,tWait=0;Object.keys(perC).forEach(function(c){tWork+=(perC[c].clockedTT||0);tWait+=(perC[c].wsp||0);});
+  var workedB=Object.keys(perP).filter(function(b){return (perP[b].nc||0)>0;});
+  var tVC=0,tNC=0;workedB.forEach(function(b){tVC+=(perP[b].vc||0);tNC+=(perP[b].nc||0);});
+  var tWork=0,tWait=0;Object.keys(perC).forEach(function(c){if((perC[c].clockedTT||0)>0){tWork+=(perC[c].clockedTT||0);tWait+=(perC[c].wsp||0);}});
   var calcPct=tVC?Math.round((tNC-tVC)/tVC*100):0;
   var waitPct=(tWork+tWait)?Math.round(tWait/(tWork+tWait)*100):0;
   var leverPct=otd?otd.pct:null;
@@ -474,11 +475,11 @@ function renderEffLive(){
   h+=stat('Leverbetrouwbaarheid (OTD)',leverPct==null?'—':leverPct+'%',otd?(otd.late+' van '+(otd.onTime+otd.late)+' te laat'):'geen data',leverPct==null?'':(leverPct>=85?'good':(leverPct>=70?'':'bad')));
   h+=stat('Calculatie-afwijking',(calcPct>0?'+':'')+calcPct+'%','werkelijk t.o.v. calculatie',calcPct>15?'bad':(calcPct<-5?'good':''));
   h+=stat('Aandeel wachttijd',waitPct+'%','van doorlooptijd = wachten',waitPct>=80?'bad':'');
-  h+=stat('Projecten',Object.keys(perP).length,'in de periode','');
+  h+=stat('Projecten (geklokt)',workedB.length,'van '+Object.keys(perP).length+' in periode','');
   h+='</div>';
-  var rows=Object.keys(perP).map(function(b){return {bp:b,vc:perP[b].vc||0,nc:perP[b].nc||0};});
+  var rows=workedB.map(function(b){return {bp:b,vc:perP[b].vc||0,nc:perP[b].nc||0};});
   rows.sort(function(a,b){return (b.nc-b.vc)-(a.nc-a.vc);});
-  h+='<div style="font-weight:600;font-size:12.5px;margin:4px 0 5px">Calculatie vs. werkelijk per project</div>';
+  h+='<div style="font-weight:600;font-size:12.5px;margin:4px 0 5px">Calculatie vs. werkelijk per project <span class="hint" style="font-weight:400">(enkel orders met geklokte tijd)</span></div>';
   h+='<table><thead><tr><th>Project</th><th>Klant</th><th class="r">Calc (VC)</th><th class="r">Werkelijk (NC)</th><th class="r">Afwijking</th></tr></thead><tbody>';
   rows.slice(0,14).forEach(function(r){var df=r.vc?Math.round((r.nc-r.vc)/r.vc*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td>'+klantOf(r.bp)+'</td><td class="r">'+r.vc.toFixed(1)+' u</td><td class="r">'+r.nc.toFixed(1)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
   h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td></td><td class="r"><b>'+tVC.toFixed(1)+' u</b></td><td class="r"><b>'+tNC.toFixed(1)+' u</b></td><td class="r"><b>'+(calcPct>0?'+':'')+calcPct+'%</b></td></tr></tbody></table>';
