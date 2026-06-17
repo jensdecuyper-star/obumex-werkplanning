@@ -163,6 +163,7 @@ var MND=['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'
 function endG(j){var a=PLACED[j.id];return (a&&a.length)?Math.max.apply(null,a):null;}
 function startG(j){var a=PLACED[j.id];return (a&&a.length)?Math.min.apply(null,a):null;}
 function prodG(j){var e=endG(j);return e==null?null:addWD(e,6);}
+function isForward(j){if(j.done)return false;var e=endG(j);return e==null||e>=GTODAY;}
 function isPlanned(j){return !!(PLACED[j.id]&&PLACED[j.id].length);}
 function baseProj(j){var s=String((j.project||j.nr||'')).trim();var m=s.match(/^(P\d+-\d+(?:_\d+)?)/i);return m?m[1]:(s||j.klant||'(zonder)');}
 function routesOf(j){return Array.isArray(j.routes)?j.routes:[];}
@@ -187,7 +188,8 @@ function canon(cel){var c=String(cel||'').toLowerCase();
   return 'Andere';}
 
 function weekCap(sg){var cap=0,d,g,dt;for(d=0;d<7;d++){g=sg+d;dt=gDate(g);if(!isWD(dt))continue;BW.forEach(function(p){var off=(p.offDays||[]).indexOf(dt.getDay())>=0;if(off)return;if(isSick(p.id,g))return;cap+=(+p.hrs||8);});}return cap;}
-function weekLoad(sg){var load=0;JOBS.forEach(function(j){if(j.done)return;var g=startG(j);if(g==null)return;if(g>=sg&&g<sg+7)load+=(+j.hrs||0);});return load;}
+var DAYH={};
+function weekLoad(sg){var s=0;for(var d=0;d<7;d++){s+=(DAYH[sg+d]||0);}return s;}
 
 /* ---------- render ---------- */
 function kpi(lab,val,sub,tone){return '<div class="kpi '+(tone||'')+'"><div class="bar" style="width:100%"></div><div class="lab">'+lab+'</div><div class="val">'+val+'</div><div class="sub">'+(sub||'')+'</div></div>';}
@@ -201,6 +203,7 @@ function render(D){
   WD=(Array.isArray(D.workDays)&&D.workDays.length)?D.workDays:[1,2,3,4,5];
   NAV=D.navOpen||{};MAT=D.materiaal||{};
   PLACED={};Object.keys(PLAN).forEach(function(k){var g=keyG(k);if(g==null)return;(PLAN[k]||[]).forEach(function(id){(PLACED[id]=PLACED[id]||[]).push(g);});});
+  DAYH={};JOBS.forEach(function(j){if(j.done)return;var gs=PLACED[j.id];if(!gs||!gs.length)return;var g0=Math.min.apply(null,gs);var rem=+j.hrs||0;var c=g0,guard=0;while(rem>0.001&&guard++<200){if(isWD(gDate(c))){var take=Math.min(rem,8);DAYH[c]=(DAYH[c]||0)+take;rem-=take;}c++;}});
 
   var active=JOBS.filter(function(j){return !j.done;});
 
@@ -212,22 +215,22 @@ function render(D){
   var avgCap=0,cn=0;caps.forEach(function(c){if(c>0){avgCap+=c;cn++;}});avgCap=cn?avgCap/cn:0;
 
   /* horizon */
-  var maxEnd=null;active.forEach(function(j){var e=endG(j);if(e!=null&&(maxEnd==null||e>maxEnd))maxEnd=e;});
+  var maxEnd=null;JOBS.forEach(function(j){if(!isForward(j))return;var e=endG(j);if(e!=null&&(maxEnd==null||e>maxEnd))maxEnd=e;});
   var horTxt = maxEnd==null?'—':dMY(gDate(maxEnd));
   var horWk = maxEnd==null?0:Math.max(0,Math.ceil((maxEnd-GTODAY)/7));
 
   /* orderboek */
-  var openHrs=0;active.forEach(function(j){if(atAutorisatie(j))return;openHrs+=(+j.hrs||0);});
+  var openHrs=0;JOBS.forEach(function(j){if(!isForward(j)||atAutorisatie(j))return;openHrs+=(+j.hrs||0);});
   var orderWk=avgCap?(openHrs/avgCap):0;
 
   /* on-time */
   var onT=0,late=0;
-  active.forEach(function(j){if(!isPlanned(j))return;var dg=dlG(j.deadline);if(dg==null)return;var pk=prodG(j);if(pk==null)return;if(pk>dg)late++;else onT++;});
+  JOBS.forEach(function(j){if(!isForward(j)||!isPlanned(j))return;var dg=dlG(j.deadline);if(dg==null)return;var pk=prodG(j);if(pk==null)return;if(pk>dg)late++;else onT++;});
   var onPct=(onT+late)?Math.round(onT/(onT+late)*100):100;
 
   /* risico deadlines */
   var risk=[];
-  active.forEach(function(j){var dg=dlG(j.deadline);if(dg==null)return;if(dg>GTODAY+28)return;
+  JOBS.forEach(function(j){if(!isForward(j))return;var dg=dlG(j.deadline);if(dg==null)return;if(dg>GTODAY+28)return;
     var reasons=[],pk=prodG(j);
     if(!isPlanned(j))reasons.push(['niet ingepland','red']);
     else if(pk!=null&&pk>dg)reasons.push(['productieklaar ná deadline','red']);
@@ -243,8 +246,8 @@ function render(D){
   /* productieklaar per maand: window -6 .. +4 months */
   var now=new Date();var baseYM=now.getFullYear()*12+now.getMonth();
   var buckets={};for(w=-6;w<=4;w++)buckets[baseYM+w]=0;
-  var doneThisMonth=0;
-  JOBS.forEach(function(j){var pk=prodG(j);if(pk==null)return;var d=gDate(pk);var ym=d.getFullYear()*12+d.getMonth();if(ym in buckets)buckets[ym]+=1;if(ym===baseYM&&j.done)doneThisMonth++;});
+  var prodThisMonth=0;
+  JOBS.forEach(function(j){var pk=prodG(j);if(pk==null)return;var d=gDate(pk);var ym=d.getFullYear()*12+d.getMonth();if(ym in buckets)buckets[ym]+=1;if(ym===baseYM)prodThisMonth++;});
   var mlabs=[],mvals=[],mcolors=[];for(w=-6;w<=4;w++){var ym=baseYM+w;var yy=Math.floor(ym/12),mm=ym%12;mlabs.push(MND[mm]+(mm===0||w===-6?(" '"+String(yy).slice(-2)):''));mvals.push(buckets[ym]);mcolors.push(w<0?'#9aa0a6':(w===0?'#111':'#C8A96E'));}
 
   /* doorlooptijd over voltooide projecten */
@@ -259,21 +262,21 @@ function render(D){
 
   /* bottlenecks */
   var cells={},order=['Autorisatie','Optimalisatie','CNC','Massief','Fineer','Kantafwerking','Bankwerk','Schuren','Tussencontrole','Kleuren/vernissen','Lakken','Andere'];
-  active.forEach(function(j){routesOf(j).forEach(function(r){var c=canon(r.cel);if(!c)return;cells[c]=(cells[c]||0)+1;});});
+  JOBS.forEach(function(j){if(!isForward(j))return;routesOf(j).forEach(function(r){var c=canon(r.cel);if(!c)return;cells[c]=(cells[c]||0)+1;});});
   var blabs=[],bvals=[];order.forEach(function(c){if(cells[c]){blabs.push(c);bvals.push(cells[c]);}});
   var prodStages=['CNC','Massief','Fineer','Kantafwerking','Bankwerk','Schuren'];
   var botName='—',botVal=0;blabs.forEach(function(c,i){if(prodStages.indexOf(c)>=0&&bvals[i]>botVal){botVal=bvals[i];botName=c;}});
   var bcolors=blabs.map(function(c){return c===botName?'#a23b3b':'#333';});
 
   /* stability */
-  var plannedJobs=active.filter(isPlanned);
-  var nRevised=active.filter(function(j){return j.revised;}).length;
-  var nBlocked=active.filter(function(j){return j.blocked;}).length;
+  var plannedJobs=JOBS.filter(function(j){return isForward(j)&&isPlanned(j);});
+  var nRevised=JOBS.filter(function(j){return isForward(j)&&j.revised;}).length;
+  var nBlocked=JOBS.filter(function(j){return isForward(j)&&j.blocked;}).length;
   var nNotReady=plannedJobs.filter(function(j){return !readyBankwerk(j);}).length;
   var atRisk=plannedJobs.filter(function(j){var pk=prodG(j),dg=dlG(j.deadline);var lateF=(dg!=null&&pk!=null&&pk>dg);return lateF||!readyBankwerk(j)||j.blocked;}).length;
   var stabIdx=plannedJobs.length?Math.round(100*(1-atRisk/plannedJobs.length)):100;
   var nTeTekenen=Object.keys(NAV).filter(function(k){var v=NAV[k];return v&&(!Array.isArray(v)||v.length);}).length;
-  var nMatOpen=active.filter(function(j){return openMat(j)>0;}).length;
+  var nMatOpen=JOBS.filter(function(j){return isForward(j)&&openMat(j)>0;}).length;
 
   /* churn vs last snapshot */
   var snapNow={};plannedJobs.forEach(function(j){snapNow[j.id]=startG(j);});
@@ -295,14 +298,14 @@ function render(D){
   k+=kpi('Orderboek',(Math.round(orderWk*10)/10)+' wk','openstaand '+Math.round(openHrs)+' u','');
   k+=kpi('Ingepland op tijd',onPct+'%',late+' fase(s) ná deadline',onPct>=90?'good':(onPct>=75?'warn':'bad'));
   k+=kpi('Risico-deadlines (4 wk)',risk.length,'vragen opvolging',risk.length===0?'good':(risk.length<=5?'warn':'bad'));
-  k+=kpi('Afgewerkt deze maand',doneThisMonth,'fases productieklaar','');
+  k+=kpi('Productieklaar deze maand',prodThisMonth,'fases (incl. prognose)','');
   k+=kpi('Gem. doorlooptijd',avgDt+' wd','1e bankwerkdag → klaar','');
   k+=kpi('Planningsstabiliteit',stabIdx+'%','staat stevig ingepland',stabIdx>=85?'good':(stabIdx>=70?'warn':'bad'));
   $('kpis').innerHTML=k;
 
   /* ===== charts ===== */
   mkChart('cBezet',{type:'bar',data:{labels:labs,datasets:[
-    {label:'Capaciteit',data:caps,backgroundColor:'#e8e8e8',borderColor:'#d4d4d4',borderWidth:1,order:2},
+    {label:'Capaciteit',data:caps,backgroundColor:'#d3d3d3',borderColor:'#a8a8a8',borderWidth:1,order:2},
     {label:'Gepland',data:loads,backgroundColor:loads.map(function(l,i){return l>caps[i]?'#a23b3b':'#C8A96E';}),order:1}
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,title:{display:true,text:'uren'}},x:{grid:{display:false}}}}});
 
