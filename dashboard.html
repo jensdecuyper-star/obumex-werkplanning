@@ -346,10 +346,9 @@ function render(D){
 /* ---------- boot: pull firebase config from index.html ---------- */
 (function(){
   fetch('./index.html',{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
-    var m=html.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})\s*;/);
-    if(!m)m=html.match(/initializeApp\(\s*(\{[\s\S]*?\})\s*\)/);
+    var m=html.match(/\{[^{}]*apiKey[^{}]*\}/);
     if(!m){showErr('Kon de Firebase-configuratie niet uit de planning-app halen.');return;}
-    var cfg;try{cfg=(new Function('return ('+m[1]+')'))();}catch(e){showErr('Config niet leesbaar: '+e.message);return;}
+    var cfg;try{cfg=(new Function('return ('+m[0]+')'))();}catch(e){showErr('Config niet leesbaar: '+e.message);return;}
     try{firebase.initializeApp(cfg);}catch(e){}
     var db=firebase.firestore();
     db.doc('planning/gedeeld').onSnapshot(function(snap){
