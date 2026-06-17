@@ -169,11 +169,18 @@ async function main() {
   } catch (e) { log('  byCell overgeslagen:', e.message); }
 
   try {
-    var fNow = new Date(), fTo = new Date(); fTo.setDate(fTo.getDate() + 35);
-    var openB = await getAllPages('/extapi/v1/po-batches/search', { closed: false, plannedDtFrom: fNow.toISOString(), plannedDtTo: fTo.toISOString(), includeProductionOrders: true });
+    var openB = await getAllPages('/extapi/v1/report/po-batches/open', { includeCells: true });
     log('  open batches (prognose):', openB.length);
     var nextK = isoWeekKey(new Date(Date.now() + 7 * 86400000));
-    openB.forEach(function (b) { var pe = b.plannedEndDt; if (!pe) return; var k = isoWeekKey(new Date(pe)); weekly.forecast[k] = (weekly.forecast[k] || 0) + 1; if (k === nextK) weekly.forecastNext.push({ po: b.productionOrderCode + '-' + b.code, oms: (b.productionOrder && b.productionOrder.description) || '' }); });
+    openB.forEach(function (b) {
+      if (b.ready) return;
+      var maxEnd = null;
+      (b.poCells || []).forEach(function (pc) { if (pc.planEndDt) { var t = new Date(pc.planEndDt).getTime(); if (maxEnd == null || t > maxEnd) maxEnd = t; } });
+      if (maxEnd == null) return;
+      var k = isoWeekKey(new Date(maxEnd));
+      weekly.forecast[k] = (weekly.forecast[k] || 0) + 1;
+      if (k === nextK) weekly.forecastNext.push({ po: b.productionOrderCode + '-' + b.code, oms: b.itemCode || '' });
+    });
   } catch (e) { log('  prognose overgeslagen:', e.message); }
 
   const payload = { updatedAt: new Date().toISOString(), window: { fromDT, toDT, weeksAhead: WEEKS_AHEAD }, perProject, perCell, scrapByCell, capByCellWeek, otd, weekly };
