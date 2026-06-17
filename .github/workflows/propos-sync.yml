@@ -1,0 +1,30 @@
+name: Propos sync
+
+on:
+  schedule:
+    - cron: '0 3 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: propos-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run Propos sync
+        env:
+          PROPOS_USER: ${{ secrets.PROPOS_USER }}
+          PROPOS_PASS: ${{ secrets.PROPOS_PASS }}
+          FIREBASE_PROJECT: obumex-werkplanning
+        run: node propos-sync.js
