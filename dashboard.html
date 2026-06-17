@@ -132,7 +132,7 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
   <div class="row">
     <div class="card full">
       <h3>Ingepland vs. effectief gewerkte uren</h3>
-      <p class="hint">Geraamde uren per project t.o.v. werkelijk gepresteerde uren (uit Propos).</p>
+      <p class="hint">Live uit Propos via automatische sync (elke nacht). De handmatige upload onderaan blijft mogelijk als reserve.</p>
       <div id="effBox"></div>
       <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
         <label style="cursor:pointer;color:#1d6b46;font-weight:600;font-size:12.5px">&#8593; Propos-urenexport importeren (.xlsx / .csv)
@@ -173,7 +173,7 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
 <script>
 "use strict";
 var CH={};
-var HIST=null,_histWritten=false,_byProj=null,PROPOSUREN=null;
+var HIST=null,_histWritten=false,_byProj=null,PROPOSUREN=null,PLIVE=null;
 function $(id){return document.getElementById(id);}
 function showErr(m){var e=$('err');e.style.display='block';e.textContent=m;$('loading').style.display='none';}
 
@@ -453,8 +453,49 @@ function handleEffFile(ev){
   rd.readAsArrayBuffer(f);
   ev.target.value='';
 }
+function _ghRunUrl(){return 'https://github.com/jensdecuyper-star/obumex-werkplanning/actions/workflows/propos-sync.yml';}
+function renderEffLive(){
+  var box=$('effBox');if(!box)return;
+  var P=PLIVE||{},perP=P.perProject||{},perC=P.perCell||{},cap=P.capByCellWeek||{},otd=P.otd||null;
+  var tVC=0,tNC=0;Object.keys(perP).forEach(function(b){tVC+=(perP[b].vc||0);tNC+=(perP[b].nc||0);});
+  var tWork=0,tWait=0;Object.keys(perC).forEach(function(c){tWork+=(perC[c].clockedTT||0);tWait+=(perC[c].wsp||0);});
+  var calcPct=tVC?Math.round((tNC-tVC)/tVC*100):0;
+  var waitPct=(tWork+tWait)?Math.round(tWait/(tWork+tWait)*100):0;
+  var leverPct=otd?otd.pct:null;
+  var upd=P.updatedAt?new Date(P.updatedAt):null;
+  function klantOf(bp){return (_byProj&&_byProj[bp]&&_byProj[bp][0]&&_byProj[bp][0].klant)?_byProj[bp][0].klant:'';}
+  function stat(lab,val,sub,tone){var c=tone==='bad'?'#a23b3b':(tone==='good'?'#1d6b46':'#111');return '<div style="flex:1;min-width:130px;border:1px solid var(--line);border-radius:8px;padding:10px 12px"><div class="hint" style="margin:0 0 4px">'+lab+'</div><div style="font-size:21px;font-weight:600;color:'+c+'">'+val+'</div><div class="hint" style="margin-top:3px">'+(sub||'')+'</div></div>';}
+  var h='';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">';
+  h+='<span class="hint">Live uit Propos'+(upd?' — bijgewerkt '+upd.toLocaleDateString('nl-BE')+' '+upd.toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'}):'')+' · automatisch elke werkdag</span>';
+  h+='<a href="'+_ghRunUrl()+'" target="_blank" rel="noopener" style="text-decoration:none;background:var(--ink);color:#fff;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600">&#128260; Nu bijwerken uit Propos</a>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">';
+  h+=stat('Leverbetrouwbaarheid (OTD)',leverPct==null?'—':leverPct+'%',otd?(otd.late+' van '+(otd.onTime+otd.late)+' te laat'):'geen data',leverPct==null?'':(leverPct>=85?'good':(leverPct>=70?'':'bad')));
+  h+=stat('Calculatie-afwijking',(calcPct>0?'+':'')+calcPct+'%','werkelijk t.o.v. calculatie',calcPct>15?'bad':(calcPct<-5?'good':''));
+  h+=stat('Aandeel wachttijd',waitPct+'%','van doorlooptijd = wachten',waitPct>=80?'bad':'');
+  h+=stat('Projecten',Object.keys(perP).length,'in de periode','');
+  h+='</div>';
+  var rows=Object.keys(perP).map(function(b){return {bp:b,vc:perP[b].vc||0,nc:perP[b].nc||0};});
+  rows.sort(function(a,b){return (b.nc-b.vc)-(a.nc-a.vc);});
+  h+='<div style="font-weight:600;font-size:12.5px;margin:4px 0 5px">Calculatie vs. werkelijk per project</div>';
+  h+='<table><thead><tr><th>Project</th><th>Klant</th><th class="r">Calc (VC)</th><th class="r">Werkelijk (NC)</th><th class="r">Afwijking</th></tr></thead><tbody>';
+  rows.slice(0,14).forEach(function(r){var df=r.vc?Math.round((r.nc-r.vc)/r.vc*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td>'+klantOf(r.bp)+'</td><td class="r">'+r.vc.toFixed(1)+' u</td><td class="r">'+r.nc.toFixed(1)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
+  h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td></td><td class="r"><b>'+tVC.toFixed(1)+' u</b></td><td class="r"><b>'+tNC.toFixed(1)+' u</b></td><td class="r"><b>'+(calcPct>0?'+':'')+calcPct+'%</b></td></tr></tbody></table>';
+  if(rows.length>14)h+='<p class="hint">+ '+(rows.length-14)+' meer\u2026</p>';
+  var caps=Object.keys(cap).map(function(c){var w=cap[c],al=0,lo=0;Object.keys(w).forEach(function(k){al+=(w[k].alloc||0);lo+=(w[k].load||0);});return {cel:c,alloc:al,load:lo,pct:al?Math.round(lo/al*100):0};});
+  caps.sort(function(a,b){return b.pct-a.pct;});
+  if(caps.length){
+    h+='<div style="font-weight:600;font-size:12.5px;margin:18px 0 5px">Capaciteitsbelasting per werkpost (komende weken)</div>';
+    h+='<table><thead><tr><th>Werkpost</th><th class="r">Geplande uren</th><th class="r">Capaciteit</th><th class="r">Belasting</th></tr></thead><tbody>';
+    caps.forEach(function(c){var col=c.pct>100?'#a23b3b':(c.pct>=80?'#b07d0a':'#1d6b46');h+='<tr><td>'+c.cel+'</td><td class="r">'+Math.round(c.load)+' u</td><td class="r">'+Math.round(c.alloc)+' u</td><td class="r" style="color:'+col+';font-weight:600">'+c.pct+'%</td></tr>';});
+    h+='</tbody></table>';
+  }
+  box.innerHTML=h;
+}
 function renderEff(){
   var box=$('effBox');if(!box)return;
+  if(PLIVE&&PLIVE.perProject&&Object.keys(PLIVE.perProject).length){return renderEffLive();}
   if(!PROPOSUREN||!Object.keys(PROPOSUREN).length){
     box.innerHTML='<p class="hint" style="color:#b07d0a">Nog geen Propos-uren ingelezen. Exporteer in Propos <b>Overzicht &#8594; Urenregistratie</b> (bij voorkeur het tabblad <b>VC en NC</b> voor een volledig beeld) en upload het hieronder. Je krijgt dan leverbetrouwbaarheid, calculatie-afwijking, wachten-vs-werken en achterstand per werkpost.</p>';
     return;
@@ -527,6 +568,7 @@ function renderEvo(){
     try{firebase.initializeApp(cfg);}catch(e){}
     var db=firebase.firestore();
     db.doc('planning/propos_uren').onSnapshot(function(s){PROPOSUREN=(s.exists&&s.data().map)?s.data().map:{};var st=$('effImpStatus');if(st&&s.exists&&s.data().updatedAt)st.textContent='laatst geïmporteerd: '+String(s.data().updatedAt).slice(0,10)+' · '+(s.data().count||Object.keys(PROPOSUREN).length)+' fases';renderEff();},function(){if(PROPOSUREN==null)PROPOSUREN={};});
+    db.doc('planning/propos_live').onSnapshot(function(s){try{PLIVE=(s.exists&&s.data().payload)?JSON.parse(s.data().payload):null;}catch(e){PLIVE=null;}renderEff();},function(){});
     db.doc('planning/gedeeld').onSnapshot(function(snap){
       if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
       try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
