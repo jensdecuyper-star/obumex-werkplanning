@@ -78,8 +78,8 @@ async function main() {
   await authenticate();
   const now = new Date();
   const from = new Date(now); from.setMonth(from.getMonth() - MONTHS_BACK);
-  const fromDT = isoDateTime(new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0));
-  const toDT = isoDateTime(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+  const fromDT = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0).toISOString();
+  const toDT = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
 
   log('Ophalen po-cells rapport...');
   const cells = await getAllPages('/extapi/v1/report/po-cells/search', { actualEndDtFrom: fromDT, actualEndDtTo: toDT });
