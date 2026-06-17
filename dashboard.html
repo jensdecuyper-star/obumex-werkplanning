@@ -107,6 +107,32 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
       <h3>Bottlenecks — werk per processtap</h3>
       <p class="hint">Aantal routes dat nu in elke stap zit. De volste stap is de flessenhals.</p>
       <div class="chartbox"><canvas id="cBottle"></canvas></div>
+      <div id="botNote" class="hint" style="margin-top:8px;font-weight:600;color:#a23b3b"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card full">
+      <h3>Evolutie van de bottleneck</h3>
+      <p class="hint">Aantal routes per processtap doorheen de tijd. Bouwt op vanaf vandaag (dagelijkse momentopname).</p>
+      <div class="chartbox" style="height:260px"><canvas id="cEvo"></canvas></div>
+      <div id="evoNote" class="hint" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card full">
+      <h3>Doorlooptijd per project &amp; fase</h3>
+      <p class="hint">Werkdagen van 1e bankwerkdag tot productieklaar. Klik op een project om de fases te tonen.</p>
+      <div id="leadBox"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card full">
+      <h3>Ingepland vs. effectief gewerkte uren</h3>
+      <p class="hint">Geraamde uren per project t.o.v. werkelijk gepresteerde uren (uit Propos).</p>
+      <div id="effBox"></div>
     </div>
   </div>
 
@@ -139,6 +165,7 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
 <script>
 "use strict";
 var CH={};
+var HIST=null,_histWritten=false,_byProj=null;
 function $(id){return document.getElementById(id);}
 function showErr(m){var e=$('err');e.style.display='block';e.textContent=m;$('loading').style.display='none';}
 
@@ -318,6 +345,7 @@ function render(D){
   mkChart('cBottle',{type:'bar',data:{labels:blabs,datasets:[{label:'Routes',data:bvals,backgroundColor:bcolors}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{precision:0}}}}});
 
+  if($('botNote'))$('botNote').textContent='Huidige flessenhals: '+botName+' ('+botVal+' routes in deze stap).';
   /* ===== risk table ===== */
   var rh='<table><thead><tr><th>P-nummer</th><th>Klant</th><th>Fase</th><th>Deadline</th><th>Productieklaar</th><th>Risico</th></tr></thead><tbody>';
   if(!risk.length)rh+='<tr><td colspan="6" style="color:#1d6b46">Geen risico-deadlines binnen 4 weken. 👍</td></tr>';
@@ -340,10 +368,82 @@ function render(D){
     '<li><span>Fases met openstaand materiaal</span><b>'+nMatOpen+'</b></li>';
   $('churn').innerHTML=churnTxt;
 
+  /* extra secties */
+  _byProj=byProj;renderLead(byProj);renderEff(D,byProj);
+  snapHistory(iso(new Date()),{Autorisatie:cells['Autorisatie']||0,Optimalisatie:cells['Optimalisatie']||0,CNC:cells['CNC']||0,Bankwerk:cells['Bankwerk']||0,Schuren:cells['Schuren']||0},bezetNow,onPct,stabIdx);
+
   /* show */
   $('loading').style.display='none';$('app').style.display='block';
   $('livedot').className='dot live';$('livetxt').textContent='live verbonden';
   $('updated').textContent='bijgewerkt '+new Date().toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'});
+}
+
+/* ---------- extra: doorlooptijd, uren, bottleneck-evolutie ---------- */
+function _leadOpenGet(){try{return JSON.parse(localStorage.getItem('obx_dash_lead')||'{}');}catch(e){return {};}}
+function faseLabelOf(j){return (j.fase||'')+(j.desc?' — '+j.desc:'');}
+function toggleLead(bp){var o=_leadOpenGet();o[bp]=!o[bp];try{localStorage.setItem('obx_dash_lead',JSON.stringify(o));}catch(e){}renderLead(_byProj);}
+function renderLead(byProj){
+  if(!byProj){return;}
+  var rows=[];
+  Object.keys(byProj).forEach(function(bp){
+    var arr=byProj[bp].filter(isPlanned);if(!arr.length)return;
+    var starts=arr.map(startG),ends=arr.map(prodG);
+    var mn=Math.min.apply(null,starts),mx=Math.max.apply(null,ends);
+    if(mn==null||mx==null||isNaN(mn)||isNaN(mx))return;
+    var allDone=byProj[bp].every(function(j){return j.done;});
+    rows.push({bp:bp,klant:(byProj[bp][0]&&byProj[bp][0].klant)||'',dur:wdBetween(mn,mx),mn:mn,mx:mx,fases:arr,done:allDone});
+  });
+  rows.sort(function(a,b){return b.dur-a.dur;});
+  var open=_leadOpenGet();
+  var h='<table><thead><tr><th></th><th>Project</th><th>Klant</th><th>Start (1e bankwerk)</th><th>Productieklaar</th><th class="r">Doorlooptijd</th></tr></thead><tbody>';
+  if(!rows.length)h+='<tr><td colspan="6" class="hint">Nog geen ingeplande projecten.</td></tr>';
+  rows.forEach(function(r){
+    var car=open[r.bp]?'▾':'▸';
+    h+='<tr class="leadrow" data-bp="'+encodeURIComponent(r.bp)+'" style="cursor:pointer"><td>'+car+'</td><td><b>'+r.bp+'</b>'+(r.done?' <span class="tag">afgewerkt</span>':'')+'</td><td>'+r.klant+'</td><td>'+dMY(gDate(r.mn))+'</td><td>'+dMY(gDate(r.mx))+'</td><td class="r"><b>'+r.dur+'</b> wd</td></tr>';
+    if(open[r.bp]){
+      r.fases.sort(function(a,b){return (startG(a)||0)-(startG(b)||0);});
+      r.fases.forEach(function(j){var fs=startG(j),fe=prodG(j);
+        h+='<tr style="background:#fafafa"><td></td><td colspan="2" style="padding-left:18px;color:#555">'+faseLabelOf(j)+'</td><td>'+(fs==null?'—':dMY(gDate(fs)))+'</td><td>'+(fe==null?'—':dMY(gDate(fe)))+'</td><td class="r">'+(fs!=null&&fe!=null?wdBetween(fs,fe)+' wd':'—')+'</td></tr>';});
+    }
+  });
+  h+='</tbody></table>';
+  var box=$('leadBox');box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('.leadrow'),function(el){el.onclick=function(){toggleLead(decodeURIComponent(el.getAttribute('data-bp')));};});
+}
+function renderEff(D,byProj){
+  var worked=D.gewerkt||D.workedHrs||null;
+  function wOf(j){if(!worked)return null;if(worked[j.id]!=null)return +worked[j.id];var k=(j.project||'')+'||'+(j.fase||'');return worked[k]!=null?+worked[k]:null;}
+  var any=false;Object.keys(byProj).forEach(function(bp){byProj[bp].forEach(function(j){if(wOf(j)!=null)any=true;});});
+  if(!worked||!any){$('effBox').innerHTML='<p class="hint" style="color:#b07d0a">Nog geen gepresteerde uren gekoppeld. Zodra de Propos-uren (gewerkte tijd per fase) ingelezen worden, verschijnt hier per project ingepland vs. effectief — met afwijkingspercentage en totalen.</p>';return;}
+  var rows=[];Object.keys(byProj).forEach(function(bp){var pl=0,ef=0,has=false;byProj[bp].forEach(function(j){pl+=(+j.hrs||0);var w=wOf(j);if(w!=null){ef+=w;has=true;}});if(has)rows.push({bp:bp,pl:pl,ef:ef});});
+  rows.sort(function(a,b){return ((b.ef-b.pl))-((a.ef-a.pl));});
+  var tp=0,te=0;rows.forEach(function(r){tp+=r.pl;te+=r.ef;});
+  var h='<table><thead><tr><th>Project</th><th class="r">Ingepland</th><th class="r">Effectief</th><th class="r">Afwijking</th></tr></thead><tbody>';
+  rows.forEach(function(r){var df=r.pl?Math.round((r.ef-r.pl)/r.pl*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td class="r">'+Math.round(r.pl)+' u</td><td class="r">'+Math.round(r.ef)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
+  var tdf=tp?Math.round((te-tp)/tp*100):0;
+  h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td class="r"><b>'+Math.round(tp)+' u</b></td><td class="r"><b>'+Math.round(te)+' u</b></td><td class="r"><b>'+(tdf>0?'+':'')+tdf+'%</b></td></tr>';
+  h+='</tbody></table>';
+  $('effBox').innerHTML=h;
+}
+function snapHistory(today,stageObj,bezet,onTime,stab){
+  if(_histWritten){renderEvo();return;}
+  _histWritten=true;
+  var payload={stage:stageObj,bezet:bezet,onTime:onTime,stab:stab};
+  try{
+    var ref=firebase.firestore().doc('planning/dashboard_history');var upd={days:{}};upd.days[today]=payload;
+    ref.set(upd,{merge:true}).then(function(){return ref.get();}).then(function(s){HIST=(s.exists&&s.data().days)?s.data().days:{};renderEvo();}).catch(function(e){_histLocal(today,payload);});
+  }catch(e){_histLocal(today,payload);}
+}
+function _histLocal(today,payload){try{var hh=JSON.parse(localStorage.getItem('obx_dash_hist')||'{}');hh[today]=payload;localStorage.setItem('obx_dash_hist',JSON.stringify(hh));HIST=hh;}catch(e){HIST={};}renderEvo();}
+function renderEvo(){
+  if(!HIST)return;
+  var dates=Object.keys(HIST).sort();
+  var stages=['Autorisatie','Optimalisatie','CNC','Bankwerk','Schuren'];
+  var colors={Autorisatie:'#9aa0a6',Optimalisatie:'#C8A96E',CNC:'#a23b3b',Bankwerk:'#111',Schuren:'#1d6b46'};
+  var ds=stages.map(function(st){return {label:st,data:dates.map(function(d){return (HIST[d].stage&&HIST[d].stage[st])||0;}),borderColor:colors[st],backgroundColor:colors[st],tension:.25,fill:false,pointRadius:3,borderWidth:st==='CNC'?3:2};});
+  var labs=dates.map(function(d){var p=d.split('-');return p[2]+'/'+p[1];});
+  mkChart('cEvo',{type:'line',data:{labels:labs,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{precision:0},title:{display:true,text:'aantal routes'}},x:{grid:{display:false}}}}});
+  var n=$('evoNote');if(n)n.textContent=dates.length<2?'Nog één meetpunt — de lijnen groeien naarmate het dashboard dagelijks opent (of via een geplande taak).':(dates.length+' meetpunten sinds '+labs[0]+'.');
 }
 
 /* ---------- boot: pull firebase config from index.html ---------- */
