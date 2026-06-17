@@ -881,6 +881,7 @@ function render(){
   S.wo=0;
   if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
   if(!S.bankBacklog)S.bankBacklog=[];
+  if(typeof migrateRouteSplit==='function') migrateRouteSplit();
   if(typeof cleanupPastBankwerk==='function') cleanupPastBankwerk();
   if(typeof maintainProdDone==='function') maintainProdDone();
   computeSpans();
@@ -1558,7 +1559,7 @@ function importRows(rows){
   var iNr=col('ponr'),iDesc=col('omschrijving'),iKlant=col('klant'),iCel=col('nu in cel'),iDl=col('geplande einddatum');
   var iStatus=col('status','voortgang','gereed');
   if(iNr<0){ alert('Import kon niet worden uitgevoerd.\n\nVerplichte kolom niet gevonden: ponr (ordernummer).\n\nGevonden kolommen:\n'+hdr.join(', ')); toast('Import gestopt: kolom ontbreekt'); return; }
-  function parseNr(nr){var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim(),route:''};}
+  function parseNr(nr){var m=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim(),route:''};}
   function gk(project,fase){return (project||'')+'||'+fase;}
   var imp={}, order=[];
   rows.slice(hi+1).forEach(function(row){
@@ -2804,7 +2805,7 @@ function migrateToFase(){
   if(!S.jobs)S.jobs=[];
   if(S.jobs.some(function(j){return j.routes;})){S._faseModel=true;return;}
   if(!S.jobs.length){S._faseModel=true;return;}
-  function pn(nr){var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim()||'?',route:''};}
+  function pn(nr){var m=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim()||'?',route:''};}
   var map={},order=[];
   S.jobs.forEach(function(j){
     var pp=pn(j.nr); var key=pp.project+'||'+pp.fase;
@@ -2943,7 +2944,7 @@ function importMateriaal(rows){
   var col=function(){for(var a=0;a<arguments.length;a++){var n=arguments[a];var idx=hdr.findIndex(function(h){return h.indexOf(String(n).toLowerCase())>=0;});if(idx>=0)return idx;}return -1;};
   var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','mijlpaal','milestone'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iType=col('type verwerking','verwerking'),iExtra=col('extra status');
   if(iFase<0&&iPonr<0){ alert('Import kon niet worden uitgevoerd.\n\nVerwachte kolommen: ponr (of Projectnr. + Fase).\n\nGevonden kolommen:\n'+hdr.join(', ')); return; }
-  function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
+  function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
   var mat={},open={},cM=0,cO=0;
   rows.slice(hi+1).forEach(function(row){
     if(!row||row.every(function(c){return !c;}))return;
@@ -3067,6 +3068,11 @@ function renderReady(){var m=document.getElementById("readyModal");if(!m)return;
  h+='</div>';
  h+='<div class="mact" style="margin-top:8px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';
  m.innerHTML=h;}
+
+
+
+function _rsParse(s){var m=String(s||"").match(/^(P\d+-\d+(?:_\d+)?)-(\d+)(?:-(.+))?$/i);return m?{project:m[1],fase:m[2],route:m[3]||""}:null;}
+function migrateRouteSplit(){try{if(!S.jobs)return false;var groups={};S.jobs.forEach(function(j){if(j.done)return;if(!/^P\d/i.test(String(j.fase||"")))return;var p=_rsParse(j.nr||j.fase);if(!p||!p.fase)return;var g=p.project+"||"+p.fase;(groups[g]=groups[g]||[]).push({j:j,p:p});});var keys=Object.keys(groups);if(!keys.length)return false;var planned=(typeof allAssigned==="function")?allAssigned():new Set();keys.forEach(function(g){var arr=groups[g];var primary=null;for(var i=0;i<arr.length;i++){if(planned.has(arr[i].j.id)){primary=arr[i];break;}}if(!primary)primary=arr[0];var routes=[];arr.forEach(function(x){var rc=x.p.route||"";var r0=(x.j.routes||[])[0]||{};routes.push({route:rc,cel:r0.cel||"",status:r0.status||""});});primary.j.project=primary.p.project;primary.j.fase=primary.p.fase;primary.j.nr=primary.p.project+"-"+primary.p.fase;primary.j.routes=(typeof dedupeRoutes==="function")?dedupeRoutes(routes):routes;arr.forEach(function(x){if(x.j===primary.j)return;Object.keys(S.plan).forEach(function(k){var a=S.plan[k];if(!a)return;var idx=a.indexOf(x.j.id);if(idx>=0){a.splice(idx,1);if(!a.length)delete S.plan[k];}});var ji=S.jobs.indexOf(x.j);if(ji>=0)S.jobs.splice(ji,1);});});return true;}catch(e){return false;}}
 
 </script>
 </body>
