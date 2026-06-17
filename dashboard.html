@@ -7,6 +7,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{--ink:#111;--mut:#777;--line:#e3e3e3;--bg:#fafafa;--card:#fff;--gold:#C8A96E;
 --green:#1d6b46;--amber:#b07d0a;--red:#a23b3b;--greenbg:#e9f3ee;--amberbg:#f7efdd;--redbg:#f5e7e7;}
@@ -133,6 +134,13 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
       <h3>Ingepland vs. effectief gewerkte uren</h3>
       <p class="hint">Geraamde uren per project t.o.v. werkelijk gepresteerde uren (uit Propos).</p>
       <div id="effBox"></div>
+      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+        <label style="cursor:pointer;color:#1d6b46;font-weight:600;font-size:12.5px">&#8593; Propos-urenexport importeren (.xlsx / .csv)
+          <input type="file" id="effFile" accept=".xlsx,.xls,.csv" style="display:none">
+        </label>
+        <span id="effImpStatus" class="hint" style="margin-left:12px"></span>
+        <div class="hint" style="margin-top:4px">Propos &#8594; Overzicht &#8594; Urenregistratie &#8594; exporteren, dan hier uploaden. Elke import vervangt de vorige.</div>
+      </div>
     </div>
   </div>
 
@@ -165,7 +173,7 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
 <script>
 "use strict";
 var CH={};
-var HIST=null,_histWritten=false,_byProj=null;
+var HIST=null,_histWritten=false,_byProj=null,PROPOSUREN=null;
 function $(id){return document.getElementById(id);}
 function showErr(m){var e=$('err');e.style.display='block';e.textContent=m;$('loading').style.display='none';}
 
@@ -369,7 +377,8 @@ function render(D){
   $('churn').innerHTML=churnTxt;
 
   /* extra secties */
-  _byProj=byProj;renderLead(byProj);renderEff(D,byProj);
+  _byProj=byProj;renderLead(byProj);renderEff();
+  var _ef=$('effFile');if(_ef&&!_ef._wired){_ef._wired=true;_ef.onchange=handleEffFile;}
   snapHistory(iso(new Date()),{Autorisatie:cells['Autorisatie']||0,Optimalisatie:cells['Optimalisatie']||0,CNC:cells['CNC']||0,Bankwerk:cells['Bankwerk']||0,Schuren:cells['Schuren']||0},bezetNow,onPct,stabIdx);
 
   /* show */
@@ -410,20 +419,61 @@ function renderLead(byProj){
   var box=$('leadBox');box.innerHTML=h;
   Array.prototype.forEach.call(box.querySelectorAll('.leadrow'),function(el){el.onclick=function(){toggleLead(decodeURIComponent(el.getAttribute('data-bp')));};});
 }
-function renderEff(D,byProj){
-  var worked=D.gewerkt||D.workedHrs||null;
-  function wOf(j){if(!worked)return null;if(worked[j.id]!=null)return +worked[j.id];var k=(j.project||'')+'||'+(j.fase||'');return worked[k]!=null?+worked[k]:null;}
-  var any=false;Object.keys(byProj).forEach(function(bp){byProj[bp].forEach(function(j){if(wOf(j)!=null)any=true;});});
-  if(!worked||!any){$('effBox').innerHTML='<p class="hint" style="color:#b07d0a">Nog geen gepresteerde uren gekoppeld. Zodra de Propos-uren (gewerkte tijd per fase) ingelezen worden, verschijnt hier per project ingepland vs. effectief — met afwijkingspercentage en totalen.</p>';return;}
-  var rows=[];Object.keys(byProj).forEach(function(bp){var pl=0,ef=0,has=false;byProj[bp].forEach(function(j){pl+=(+j.hrs||0);var w=wOf(j);if(w!=null){ef+=w;has=true;}});if(has)rows.push({bp:bp,pl:pl,ef:ef});});
-  rows.sort(function(a,b){return ((b.ef-b.pl))-((a.ef-a.pl));});
-  var tp=0,te=0;rows.forEach(function(r){tp+=r.pl;te+=r.ef;});
-  var h='<table><thead><tr><th>Project</th><th class="r">Ingepland</th><th class="r">Effectief</th><th class="r">Afwijking</th></tr></thead><tbody>';
-  rows.forEach(function(r){var df=r.pl?Math.round((r.ef-r.pl)/r.pl*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td class="r">'+Math.round(r.pl)+' u</td><td class="r">'+Math.round(r.ef)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
+function ponrBase(po){var m=String(po).match(/^(P\d+-\d+(?:_\d+)?)/i);return m?m[1]:String(po);}
+function _pnum(v){v=String(v==null?'':v).trim().replace(/\s/g,'').replace(/\./g,'').replace(',', '.');var n=parseFloat(v);return isNaN(n)?0:n;}
+function _pdate(s){if(!s)return null;var t=String(s).trim().split(' ')[0].split(/[-\/]/);if(t.length!==3)return null;var y=+t[2];if(y<100)y+=2000;var d=new Date(y,(+t[1])-1,+t[0]);return isNaN(d.getTime())?null:d;}
+function parseProposSheet(arrbuf){
+  if(typeof XLSX==='undefined')return null;
+  var wb=XLSX.read(arrbuf,{type:'array'});var ws=wb.Sheets[wb.SheetNames[0]];if(!ws)return null;
+  var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});if(!rows||!rows.length)return null;
+  var hdr=rows[0].map(function(x){return String(x).replace(/\s+/g,' ').trim();});
+  function ci(name){return hdr.indexOf(name);}
+  var iP=ci('PONr'),iVC=ci('VC CP TT'),iNC=ci('NC CP TT'),iGE=ci('Geplande einddatum (cel)'),iWE=ci('Werkelijke eind (cel)'),iCel=ci('Cel'),iOms=ci('Omschrijving');
+  if(iGE<0)iGE=hdr.findIndex(function(x){return /geplande eind/i.test(x);});
+  if(iWE<0)iWE=hdr.findIndex(function(x){return /werkelijke eind/i.test(x);});
+  if(iP<0||iVC<0||iNC<0)return null;
+  var map={};
+  for(var r=1;r<rows.length;r++){var row=rows[r];var po=String(row[iP]||'').trim();if(!po)continue;
+    map[po]={vc:_pnum(row[iVC]),nc:_pnum(row[iNC]),ge:iGE>=0?String(row[iGE]||'').trim():'',we:iWE>=0?String(row[iWE]||'').trim():'',cel:iCel>=0?String(row[iCel]||'').trim():'',oms:iOms>=0?String(row[iOms]||'').trim():''};}
+  return map;
+}
+function handleEffFile(ev){
+  var f=ev.target.files&&ev.target.files[0];if(!f)return;
+  var st=$('effImpStatus');if(st)st.textContent='Bezig met inlezen…';
+  var rd=new FileReader();
+  rd.onload=function(){try{
+    var map=parseProposSheet(new Uint8Array(rd.result));
+    if(!map||!Object.keys(map).length){if(st)st.textContent='Geen geldige gegevens (verwacht kolommen PONr, VC CP TT, NC CP TT).';return;}
+    var n=Object.keys(map).length;
+    firebase.firestore().doc('planning/propos_uren').set({map:map,updatedAt:new Date().toISOString(),count:n}).then(function(){
+      if(st)st.textContent=n+' fases ingelezen en gedeeld ✓';
+    }).catch(function(e){PROPOSUREN=map;renderEff();if(st)st.textContent='Lokaal ingelezen ('+n+') — delen mislukt: '+e.message;});
+  }catch(e){if(st)st.textContent='Fout bij inlezen: '+e.message;}};
+  rd.onerror=function(){if(st)st.textContent='Kon bestand niet lezen.';};
+  rd.readAsArrayBuffer(f);
+  ev.target.value='';
+}
+function renderEff(){
+  var box=$('effBox');if(!box)return;
+  if(!PROPOSUREN||!Object.keys(PROPOSUREN).length){
+    box.innerHTML='<p class="hint" style="color:#b07d0a">Nog geen Propos-uren ingelezen. Exporteer in Propos het scherm <b>Overzicht &#8594; Urenregistratie</b> en upload het hieronder — dan verschijnt per project ingepland (VC) vs. effectief (NC) met afwijking.</p>';
+    return;
+  }
+  var byP={},onT=0,late=0,nDate=0;
+  Object.keys(PROPOSUREN).forEach(function(po){var e=PROPOSUREN[po];var b=ponrBase(po);if(!byP[b])byP[b]={vc:0,nc:0,oms:e.oms};byP[b].vc+=e.vc;byP[b].nc+=e.nc;
+    var g=_pdate(e.ge),w=_pdate(e.we);if(g&&w){nDate++;if(w.setHours(0,0,0,0)<=g.setHours(0,0,0,0))onT++;else late++;}});
+  function klantOf(bp,oms){if(_byProj&&_byProj[bp]&&_byProj[bp][0]&&_byProj[bp][0].klant)return _byProj[bp][0].klant;var c=String(oms||'').split(',');return c.length>1?c.slice(1).join(',').trim():'';}
+  var rows=Object.keys(byP).map(function(b){return {bp:b,vc:byP[b].vc,nc:byP[b].nc,oms:byP[b].oms};});
+  rows.sort(function(a,b){return (b.nc-b.vc)-(a.nc-a.vc);});
+  var tp=0,te=0;rows.forEach(function(r){tp+=r.vc;te+=r.nc;});
+  var h='';
+  if(nDate){var pct=Math.round(onT/(onT+late)*100);h+='<p class="hint" style="margin:0 0 8px"><b>Leverbetrouwbaarheid (Propos):</b> '+pct+'% op tijd — '+late+' van '+nDate+' fases later dan gepland klaar.</p>';}
+  h+='<table><thead><tr><th>Project</th><th>Klant</th><th class="r">Ingepland (VC)</th><th class="r">Effectief (NC)</th><th class="r">Afwijking</th></tr></thead><tbody>';
+  rows.forEach(function(r){var df=r.vc?Math.round((r.nc-r.vc)/r.vc*100):0;var col=df>10?'#a23b3b':(df<-10?'#1d6b46':'#555');h+='<tr><td><b>'+r.bp+'</b></td><td>'+klantOf(r.bp,r.oms)+'</td><td class="r">'+r.vc.toFixed(1)+' u</td><td class="r">'+r.nc.toFixed(1)+' u</td><td class="r" style="color:'+col+'">'+(df>0?'+':'')+df+'%</td></tr>';});
   var tdf=tp?Math.round((te-tp)/tp*100):0;
-  h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td class="r"><b>'+Math.round(tp)+' u</b></td><td class="r"><b>'+Math.round(te)+' u</b></td><td class="r"><b>'+(tdf>0?'+':'')+tdf+'%</b></td></tr>';
+  h+='<tr style="border-top:2px solid #111"><td><b>Totaal</b></td><td></td><td class="r"><b>'+tp.toFixed(1)+' u</b></td><td class="r"><b>'+te.toFixed(1)+' u</b></td><td class="r"><b>'+(tdf>0?'+':'')+tdf+'%</b></td></tr>';
   h+='</tbody></table>';
-  $('effBox').innerHTML=h;
+  box.innerHTML=h;
 }
 function snapHistory(today,stageObj,bezet,onTime,stab){
   if(_histWritten){renderEvo();return;}
@@ -454,6 +504,7 @@ function renderEvo(){
     var cfg;try{cfg=(new Function('return ('+m[0]+')'))();}catch(e){showErr('Config niet leesbaar: '+e.message);return;}
     try{firebase.initializeApp(cfg);}catch(e){}
     var db=firebase.firestore();
+    db.doc('planning/propos_uren').onSnapshot(function(s){PROPOSUREN=(s.exists&&s.data().map)?s.data().map:{};var st=$('effImpStatus');if(st&&s.exists&&s.data().updatedAt)st.textContent='laatst geïmporteerd: '+String(s.data().updatedAt).slice(0,10)+' · '+(s.data().count||Object.keys(PROPOSUREN).length)+' fases';renderEff();},function(){if(PROPOSUREN==null)PROPOSUREN={};});
     db.doc('planning/gedeeld').onSnapshot(function(snap){
       if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
       try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
