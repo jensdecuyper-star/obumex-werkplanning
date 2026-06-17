@@ -434,7 +434,7 @@ function parseProposSheet(arrbuf){
   if(iP<0||iVC<0||iNC<0)return null;
   var map={};
   for(var r=1;r<rows.length;r++){var row=rows[r];var po=String(row[iP]||'').trim();if(!po)continue;
-    map[po]={vc:_pnum(row[iVC]),nc:_pnum(row[iNC]),ge:iGE>=0?String(row[iGE]||'').trim():'',we:iWE>=0?String(row[iWE]||'').trim():'',cel:iCel>=0?String(row[iCel]||'').trim():'',oms:iOms>=0?String(row[iOms]||'').trim():''};}
+    map[po+'#'+r]={po:po,vc:_pnum(row[iVC]),nc:_pnum(row[iNC]),ge:iGE>=0?String(row[iGE]||'').trim():'',we:iWE>=0?String(row[iWE]||'').trim():'',cel:iCel>=0?String(row[iCel]||'').trim():'',oms:iOms>=0?String(row[iOms]||'').trim():''};}
   return map;
 }
 function handleEffFile(ev){
@@ -460,7 +460,7 @@ function renderEff(){
     return;
   }
   var byP={},onT=0,late=0,nDate=0;
-  Object.keys(PROPOSUREN).forEach(function(po){var e=PROPOSUREN[po];var b=ponrBase(po);if(!byP[b])byP[b]={vc:0,nc:0,oms:e.oms};byP[b].vc+=e.vc;byP[b].nc+=e.nc;
+  Object.keys(PROPOSUREN).forEach(function(po){var e=PROPOSUREN[po];var b=ponrBase(e.po||po);if(!byP[b])byP[b]={vc:0,nc:0,oms:e.oms};byP[b].vc+=e.vc;byP[b].nc+=e.nc;
     var g=_pdate(e.ge),w=_pdate(e.we);if(g&&w){nDate++;if(w.setHours(0,0,0,0)<=g.setHours(0,0,0,0))onT++;else late++;}});
   function klantOf(bp,oms){if(_byProj&&_byProj[bp]&&_byProj[bp][0]&&_byProj[bp][0].klant)return _byProj[bp][0].klant;var c=String(oms||'').split(',');return c.length>1?c.slice(1).join(',').trim():'';}
   var rows=Object.keys(byP).map(function(b){return {bp:b,vc:byP[b].vc,nc:byP[b].nc,oms:byP[b].oms};});
