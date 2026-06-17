@@ -31,6 +31,7 @@ function pad(n) { return String(n).padStart(2, '0'); }
 function isoDate(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
 function isoDateTime(d) { return isoDate(d) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
 function baseProject(code) { const m = String(code || '').match(/^(P\d+-\d+(?:_\d+)?)/i); return m ? m[1] : String(code || ''); }
+function isoWeekKey(d){var t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));var day=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-day);var ys=new Date(Date.UTC(t.getUTCFullYear(),0,1));var wk=Math.ceil((((t-ys)/86400000)+1)/7);return t.getUTCFullYear()+'-W'+(wk<10?'0'+wk:wk);}
 async function fetchFirebaseKey() {
   if (FB_KEY) return FB_KEY;
   const r = await fetch('https://jensdecuyper-star.github.io/obumex-werkplanning/index.html', { cache: 'no-store' });
@@ -133,11 +134,15 @@ async function main() {
   } catch (e) { log('  planned-orders overgeslagen:', e.message); }
 
   let otd = null;
+  var weekly = { finished: {}, "new": {}, byCell: { Bankwerk: {}, CNC: {} }, forecast: {}, forecastNext: [] };
   try {
-    log('Ophalen OTD (orders + closed batches)...');
+    log('Ophalen orders + closed batches (OTD + weekreeksen)...');
     const orders = await getAllPages('/extapi/v1/production-orders/search', { archived: false });
     const reqByBatch = {};
     for (const o of orders) {
+      for (const b of (o.poBatches || [])) {
+        if (b.extCreatedDt) { var nk = isoWeekKey(new Date(b.extCreatedDt)); weekly["new"][nk] = (weekly["new"][nk] || 0) + 1; }
+      }
       if (o.relevantForOnTimeDelivery === false || o.parentCode) continue;
       for (const b of (o.poBatches || [])) {
         const red = b.overrideRequiredEndDt || b.requiredEndDt;
@@ -147,6 +152,7 @@ async function main() {
     const closed = await getAllPages('/extapi/v1/report/po-batches/closed', { actualEndDtFrom: fromDT, actualEndDtTo: toDT });
     let on = 0, late = 0, byCust = {};
     for (const b of closed) {
+      if (b.actualEndDt) { var fk = isoWeekKey(new Date(b.actualEndDt)); weekly.finished[fk] = (weekly.finished[fk] || 0) + 1; }
       const ref = reqByBatch[b.productionOrderCode + '||' + b.code];
       if (!ref || !b.actualEndDt) continue;
       const lateF = new Date(b.actualEndDt) > new Date(ref.req);
@@ -156,9 +162,21 @@ async function main() {
     }
     if (on + late > 0) otd = { onTime: on, late: late, pct: Math.round(on / (on + late) * 100), byCustomer: byCust };
     log('  OTD:', otd ? otd.pct + '% (' + (on + late) + ' orders)' : 'geen data');
-  } catch (e) { log('  OTD overgeslagen:', e.message); }
+  } catch (e) { log('  OTD/weekreeksen overgeslagen:', e.message); }
 
-  const payload = { updatedAt: new Date().toISOString(), window: { fromDT, toDT, weeksAhead: WEEKS_AHEAD }, perProject, perCell, scrapByCell, capByCellWeek, otd };
+  try {
+    cells.forEach(function (c) { if (!c.actualEndDt) return; var cell = String(c.cellCode || ''); var t = /bankwerk/i.test(cell) ? 'Bankwerk' : (/cnc/i.test(cell) ? 'CNC' : null); if (t) { var k = isoWeekKey(new Date(c.actualEndDt)); weekly.byCell[t][k] = (weekly.byCell[t][k] || 0) + 1; } });
+  } catch (e) { log('  byCell overgeslagen:', e.message); }
+
+  try {
+    var fNow = new Date(), fTo = new Date(); fTo.setDate(fTo.getDate() + 35);
+    var openB = await getAllPages('/extapi/v1/po-batches/search', { closed: false, plannedDtFrom: fNow.toISOString(), plannedDtTo: fTo.toISOString(), includeProductionOrders: true });
+    log('  open batches (prognose):', openB.length);
+    var nextK = isoWeekKey(new Date(Date.now() + 7 * 86400000));
+    openB.forEach(function (b) { var pe = b.plannedEndDt; if (!pe) return; var k = isoWeekKey(new Date(pe)); weekly.forecast[k] = (weekly.forecast[k] || 0) + 1; if (k === nextK) weekly.forecastNext.push({ po: b.productionOrderCode + '-' + b.code, oms: (b.productionOrder && b.productionOrder.description) || '' }); });
+  } catch (e) { log('  prognose overgeslagen:', e.message); }
+
+  const payload = { updatedAt: new Date().toISOString(), window: { fromDT, toDT, weeksAhead: WEEKS_AHEAD }, perProject, perCell, scrapByCell, capByCellWeek, otd, weekly };
 
   const fbKey = await fetchFirebaseKey();
   const url = 'https://firestore.googleapis.com/v1/projects/' + FB_PROJECT +
