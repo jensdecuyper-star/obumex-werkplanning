@@ -124,7 +124,7 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
   <div class="row">
     <div class="card full">
       <h3>Doorlooptijd per project &amp; fase</h3>
-      <p class="hint">Werkdagen van 1e bankwerkdag tot productieklaar. Klik op een project om de fases te tonen.</p>
+      <p class="hint">Volledige doorlooptijd: autorisatie &#8594; uit de lijst (uit Propos, kalenderdagen). Klik op een project om de fases te tonen.</p>
       <div id="leadBox"></div>
     </div>
   </div>
@@ -252,6 +252,7 @@ function kpi(lab,val,sub,tone){return '<div class="kpi '+(tone||'')+'"><div clas
 function mkChart(id,cfg){if(CH[id]){CH[id].destroy();}CH[id]=new Chart($(id).getContext('2d'),cfg);}
 
 function render(D){
+  window._lastD=D;
   BASE=bMon();GTODAY=gToday();
   JOBS=(D.jobs||[]).filter(function(j){return j&&j.id;});
   PLAN=D.plan||{};BW=(D.bw||[]).filter(Boolean);EV=D.events||{};HOL=D.holidays||{};
@@ -354,7 +355,8 @@ function render(D){
   k+=kpi('Ingepland op tijd',onPct+'%',late+' fase(s) ná deadline',onPct>=90?'good':(onPct>=75?'warn':'bad'));
   k+=kpi('Risico-deadlines (4 wk)',risk.length,'vragen opvolging',risk.length===0?'good':(risk.length<=5?'warn':'bad'));
   k+=kpi('Productieklaar deze maand',prodThisMonth,'fases (incl. prognose)','');
-  k+=kpi('Gem. doorlooptijd',avgDt+' wd','1e bankwerkdag → klaar','');
+  var _ltAvg=(window.PLIVE&&PLIVE.leadtime&&PLIVE.leadtime.avgDays!=null)?PLIVE.leadtime.avgDays:null;
+  k+=kpi('Gem. doorlooptijd',(_ltAvg!=null?_ltAvg+' d':avgDt+' wd'),(_ltAvg!=null?'autorisatie → uit lijst':'1e bankwerkdag → klaar'),'');
   k+=kpi('Planningsstabiliteit',stabIdx+'%','staat stevig ingepland',stabIdx>=85?'good':(stabIdx>=70?'warn':'bad'));
   $('kpis').innerHTML=k;
 
@@ -411,7 +413,29 @@ function render(D){
 function _leadOpenGet(){try{return JSON.parse(localStorage.getItem('obx_dash_lead')||'{}');}catch(e){return {};}}
 function faseLabelOf(j){return (j.fase||'')+(j.desc?' — '+j.desc:'');}
 function toggleLead(bp){var o=_leadOpenGet();o[bp]=!o[bp];try{localStorage.setItem('obx_dash_lead',JSON.stringify(o));}catch(e){}renderLead(_byProj);}
+function renderLeadLive(){
+  var box=$('leadBox');if(!box)return;
+  var fz=(PLIVE.leadtime&&PLIVE.leadtime.fases)||[];
+  function dM(ms){var d=new Date(ms);return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();}
+  function klantOf(bp){return (_byProj&&_byProj[bp]&&_byProj[bp][0]&&_byProj[bp][0].klant)?_byProj[bp][0].klant:'';}
+  var byB={};fz.forEach(function(e){var b=e.base||ponrBase(e.po);(byB[b]=byB[b]||[]).push(e);});
+  var rows=Object.keys(byB).map(function(b){var arr=byB[b];var mn=Math.min.apply(null,arr.map(function(x){return new Date(x.start).getTime();}));var mx=Math.max.apply(null,arr.map(function(x){return new Date(x.end).getTime();}));return {bp:b,fz:arr,mn:mn,mx:mx,days:Math.round((mx-mn)/86400000)};});
+  rows.sort(function(a,b){return b.days-a.days;});
+  var open=_leadOpenGet();
+  var h='<table><thead><tr><th></th><th>Project</th><th>Klant</th><th>Start (autorisatie)</th><th>Klaar (uit lijst)</th><th class="r">Doorlooptijd</th></tr></thead><tbody>';
+  if(!rows.length)h+='<tr><td colspan="6" class="hint">Nog geen afgewerkte fases met start- en einddatum uit Propos.</td></tr>';
+  rows.slice(0,60).forEach(function(r){
+    var car=open[r.bp]?'▾':'▸';
+    h+='<tr class="leadrow" data-bp="'+encodeURIComponent(r.bp)+'" style="cursor:pointer"><td>'+car+'</td><td><b>'+r.bp+'</b></td><td>'+klantOf(r.bp)+'</td><td>'+dM(r.mn)+'</td><td>'+dM(r.mx)+'</td><td class="r"><b>'+r.days+'</b> d</td></tr>';
+    if(open[r.bp]){r.fz.sort(function(a,b){return new Date(a.start)-new Date(b.start);});r.fz.forEach(function(x){h+='<tr style="background:#fafafa"><td></td><td colspan="2" style="padding-left:18px;color:#555">'+x.po+'</td><td>'+dM(new Date(x.start).getTime())+'</td><td>'+dM(new Date(x.end).getTime())+'</td><td class="r">'+x.days+' d</td></tr>';});}
+  });
+  h+='</tbody></table>';
+  if(rows.length>60)h+='<p class="hint">+ '+(rows.length-60)+' meer\u2026</p>';
+  box.innerHTML=h;
+  Array.prototype.forEach.call(box.querySelectorAll('.leadrow'),function(el){el.onclick=function(){toggleLead(decodeURIComponent(el.getAttribute('data-bp')));};});
+}
 function renderLead(byProj){
+  if(window.PLIVE&&PLIVE.leadtime&&PLIVE.leadtime.fases&&PLIVE.leadtime.fases.length){return renderLeadLive();}
   if(!byProj){return;}
   var rows=[];
   Object.keys(byProj).forEach(function(bp){
@@ -599,9 +623,16 @@ function renderWeekly(P){
   var fin2=range.map(function(r,i){return (i<=curIdx)?((w.finished&&w.finished[r.key])||0):null;});
   mkChart('cWkFlow',{type:'line',data:{labels:labels,datasets:[{label:'Nieuw bijgekomen',data:nw,borderColor:'#b07d0a',backgroundColor:'#b07d0a',tension:.25,fill:false,pointRadius:3},{label:'Volledig afgewerkt',data:fin2,borderColor:'#1d6b46',backgroundColor:'#1d6b46',tension:.25,fill:false,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}});
   var nextKey=_isoWeekKey(new Date(Date.now()+604800000));
+  var lastKey=_isoWeekKey(new Date(Date.now()-604800000));
   var nextN=(w.forecast&&w.forecast[nextKey])||0;
+  var lastN=(w.finished&&w.finished[lastKey])||0;
   var el=$('wkNext');
-  if(el){var lst=(w.forecastNext||[]).slice(0,12);el.innerHTML='<b>Volgende week ('+nextKey.slice(6)+') verwacht volledig klaar: '+nextN+' fases.</b>'+(lst.length?'<div style="margin-top:6px;columns:2">'+lst.map(function(x){return '• '+x.po+(x.oms?' — '+x.oms:'');}).join('<br>')+'</div>':'');}
+  if(el){
+    var ll=(w.finishedLast||[]).slice(0,12);var nx=(w.forecastNext||[]).slice(0,12);
+    var hh='<div style="display:flex;gap:24px;flex-wrap:wrap">';
+    hh+='<div style="flex:1;min-width:260px"><b>Vorige week ('+lastKey.slice(6)+') volledig afgewerkt: '+lastN+' fases.</b>'+(ll.length?'<div style="margin-top:6px">'+ll.map(function(x){return '• '+x.po+(x.oms?' — '+x.oms:'');}).join('<br>')+'</div>':'')+'</div>';
+    hh+='<div style="flex:1;min-width:260px"><b>Volgende week ('+nextKey.slice(6)+') verwacht volledig klaar: '+nextN+' fases.</b>'+(nx.length?'<div style="margin-top:6px">'+nx.map(function(x){return '• '+x.po+(x.oms?' — '+x.oms:'');}).join('<br>')+'</div>':'')+'</div>';
+    hh+='</div>';el.innerHTML=hh;}
 }
 
 /* ---------- boot: pull firebase config from index.html ---------- */
@@ -613,7 +644,7 @@ function renderWeekly(P){
     try{firebase.initializeApp(cfg);}catch(e){}
     var db=firebase.firestore();
     db.doc('planning/propos_uren').onSnapshot(function(s){PROPOSUREN=(s.exists&&s.data().map)?s.data().map:{};var st=$('effImpStatus');if(st&&s.exists&&s.data().updatedAt)st.textContent='laatst geïmporteerd: '+String(s.data().updatedAt).slice(0,10)+' · '+(s.data().count||Object.keys(PROPOSUREN).length)+' fases';renderEff();},function(){if(PROPOSUREN==null)PROPOSUREN={};});
-    db.doc('planning/propos_live').onSnapshot(function(s){try{PLIVE=(s.exists&&s.data().payload)?JSON.parse(s.data().payload):null;}catch(e){PLIVE=null;}renderEff();try{renderWeekly(PLIVE);}catch(e){}},function(){});
+    db.doc('planning/propos_live').onSnapshot(function(s){try{PLIVE=(s.exists&&s.data().payload)?JSON.parse(s.data().payload):null;}catch(e){PLIVE=null;}try{if(window._lastD)render(window._lastD);else renderEff();}catch(e){renderEff();}try{renderWeekly(PLIVE);}catch(e){}},function(){});
     db.doc('planning/gedeeld').onSnapshot(function(snap){
       if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
       try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
