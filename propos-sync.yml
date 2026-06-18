@@ -1,0 +1,58 @@
+name: Propos & Plaatsing Sync
+
+on:
+  schedule:
+    # Run weekdays at 3 AM UTC (4 AM CET)
+    - cron: '0 3 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Python deps
+        run: |
+          pip install --break-system-packages openpyxl requests
+
+      - name: Download latest FileMaker export
+        env:
+          PROPOS_USER: ${{ secrets.PROPOS_USER }}
+          PROPOS_PASS: ${{ secrets.PROPOS_PASS }}
+        run: node propos-sync.js
+
+      - name: Download PROGRAMMERING CNC Excel from SharePoint
+        # Note: This requires additional setup. For now, assumes file is committed.
+        run: |
+          echo "[sync] Plaatsing sync: using local/committed Excel file"
+          test -f programmering_cnc.xlsx && echo "✓ Found" || echo "⚠ Not found (manual download needed)"
+
+      - name: Run Plaatsing sync
+        run: python3 plaatsing-sync.py
+
+      - name: Commit if changed
+        run: |
+          git config --global user.email "bot@example.com"
+          git config --global user.name "Sync Bot"
+          if git diff --quiet; then
+            echo "No changes"
+          else
+            git add -A
+            git commit -m "Sync: Propos + Plaatsing data [$(date -u +'%Y-%m-%d %H:%M UTC')]"
+            git push
+          fi
