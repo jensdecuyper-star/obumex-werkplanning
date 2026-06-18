@@ -357,6 +357,8 @@ function render(D){
   k+=kpi('Productieklaar deze maand',prodThisMonth,'fases (incl. prognose)','');
   var _ltAvg=(window.PLIVE&&PLIVE.leadtime&&PLIVE.leadtime.avgDays!=null)?PLIVE.leadtime.avgDays:null;
   k+=kpi('Gem. doorlooptijd',(_ltAvg!=null?_ltAvg+' d':avgDt+' wd'),(_ltAvg!=null?'autorisatie → uit lijst':'1e bankwerkdag → klaar'),'');
+  var _plaatsAvail=(window.PLAATS&&PLAATS.totaalPlaatsingsdagen!=null)?PLAATS.totaalPlaatsingsdagen:0;
+  k+=kpi('Plaatsingsdagen',Math.round(_plaatsAvail),'in productie','');
   k+=kpi('Planningsstabiliteit',stabIdx+'%','staat stevig ingepland',stabIdx>=85?'good':(stabIdx>=70?'warn':'bad'));
   $('kpis').innerHTML=k;
 
@@ -645,6 +647,7 @@ function renderWeekly(P){
     var db=firebase.firestore();
     db.doc('planning/propos_uren').onSnapshot(function(s){PROPOSUREN=(s.exists&&s.data().map)?s.data().map:{};var st=$('effImpStatus');if(st&&s.exists&&s.data().updatedAt)st.textContent='laatst geïmporteerd: '+String(s.data().updatedAt).slice(0,10)+' · '+(s.data().count||Object.keys(PROPOSUREN).length)+' fases';renderEff();},function(){if(PROPOSUREN==null)PROPOSUREN={};});
     db.doc('planning/propos_live').onSnapshot(function(s){try{PLIVE=(s.exists&&s.data().payload)?JSON.parse(s.data().payload):null;}catch(e){PLIVE=null;}try{if(window._lastD)render(window._lastD);else renderEff();}catch(e){renderEff();}try{renderWeekly(PLIVE);}catch(e){}},function(){});
+    db.doc('planning/plaatsing_live').onSnapshot(function(s){try{PLAATS=null;var d=s.data();if(d&&d.payload)PLAATS=JSON.parse(d.payload);}catch(e){PLAATS=null;}try{if(window._lastD)render(window._lastD);}catch(e){}}catch(e){}},function(){});
     db.doc('planning/gedeeld').onSnapshot(function(snap){
       if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
       try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
