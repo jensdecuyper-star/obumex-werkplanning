@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obumex — Production KPIs</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --ink: #111;
+  --mut: #777;
+  --line: #e3e3e3;
+  --bg: #fafafa;
+  --card: #fff;
+  --gold: #C8A96E;
+  --green: #1d6b46;
+  --amber: #b07d0a;
+  --red: #a23b3b;
+  --greenbg: #e9f3ee;
+  --amberbg: #f7efdd;
+  --redbg: #f5e7e7;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: "Sofia Pro", Arial, sans-serif; }
+a { color: inherit; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 22px 26px 60px; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 20px; }
+header .left { display: flex; align-items: flex-end; gap: 18px; }
+header img { height: 34px; display: block; }
+header .ttl { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--mut); border-left: 1px solid var(--line); padding-left: 18px; line-height: 1.3; }
+header .ttl b { display: block; color: var(--ink); font-size: 16px; text-transform: none; }
+header .status { text-align: right; font-size: 11.5px; color: var(--mut); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #bbb; margin-right: 5px; vertical-align: middle; }
+.dot.live { background: var(--green); box-shadow: 0 0 0 3px rgba(29,107,70,.15); }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 15px; position: relative; }
+.kpi .lab { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); margin-bottom: 8px; }
+.kpi .val { font-size: 32px; font-weight: 600; line-height: 1; }
+.kpi .sub { font-size: 11.5px; color: var(--mut); margin-top: 6px; }
+.kpi.good { background: var(--greenbg); } .kpi.good .val { color: var(--green); }
+.kpi.warn { background: var(--amberbg); } .kpi.warn .val { color: var(--amber); }
+.kpi.bad { background: var(--redbg); } .kpi.bad .val { color: var(--red); }
+.section { margin: 24px 0; }
+.section h2 { font-size: 16px; letter-spacing: .02em; margin: 0 0 12px; color: var(--ink); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
+.card h3 { margin: 0 0 12px; font-size: 14px; }
+.chartbox { position: relative; height: 250px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+th { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--mut); font-weight: 600; background: #f9f9f9; }
+td.r { text-align: right; }
+.tag { display: inline-block; font-size: 10px; padding: 3px 8px; border-radius: 12px; background: #f0f0f0; margin: 2px 4px 2px 0; }
+#loading { padding: 40px; text-align: center; color: var(--mut); }
+#error { display: none; background: var(--redbg); color: var(--red); border: 1px solid #e3c4c4; border-radius: 8px; padding: 12px; margin: 12px 0; }
+footer { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 10.5px; color: var(--mut); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="left">
+      <svg width="34" height="34" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <rect fill="#111" width="100" height="100"/>
+        <text x="50" y="65" font-size="60" font-weight="bold" fill="#fff" text-anchor="middle">O</text>
+      </svg>
+      <div class="ttl">
+        <b>Production KPIs</b>
+        Bankerwerkers & Productie
+      </div>
+    </div>
+    <div class="status">
+      <span class="dot live"></span> Live
+    </div>
+  </header>
+
+  <div id="error"></div>
+  <div id="loading">Data laden...</div>
+
+  <div id="content" style="display:none;">
+    <!-- KPI Row -->
+    <div class="kpis">
+      <div class="kpi good">
+        <div class="lab">Retours</div>
+        <div class="val" id="kpi-retours">-</div>
+        <div class="sub">%</div>
+      </div>
+      <div class="kpi">
+        <div class="lab">Gemiddelde doorlooptijd</div>
+        <div class="val" id="kpi-doorlooptijd">-</div>
+        <div class="sub">dagen</div>
+      </div>
+      <div class="kpi">
+        <div class="lab">Output productie</div>
+        <div class="val" id="kpi-output">-</div>
+        <div class="sub">fases/week</div>
+      </div>
+    </div>
+
+    <!-- Afgewerkte fases deze week -->
+    <div class="section">
+      <h2>Afgewerkte fases deze week</h2>
+      <div class="card">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+          <div>
+            <div class="lab">Aantal fases</div>
+            <div class="val" id="week-count">-</div>
+          </div>
+          <div>
+            <div class="lab">Totaal plaatsingsdagen</div>
+            <div class="val" id="week-plaatsing">-</div>
+          </div>
+          <div>
+            <div class="lab">Gemiddeld per fase</div>
+            <div class="val" id="week-avg">-</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Fase</th>
+              <th>Project</th>
+              <th class="r">Plaatsingsdagen</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="week-fases">
+            <tr><td colspan="4" style="text-align:center; color: var(--mut);">Geen data beschikbaar</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Forecast volgende week -->
+    <div class="section">
+      <h2>Geschatte afwerking volgende week</h2>
+      <div class="card">
+        <div id="forecast-content" style="color: var(--mut); text-align: center; padding: 20px;">
+          Forecast data wordt bepaald op basis van historische doorlooptijden...
+        </div>
+      </div>
+    </div>
+
+    <!-- Plaatsingsdagen In/Uit -->
+    <div class="section">
+      <h2>Plaatsingsdagen in/uit productie (4 weken)</h2>
+      <div class="card">
+        <div class="chartbox">
+          <canvas id="chart-plaatsing"></canvas>
+        </div>
+        <table style="margin-top: 12px;">
+          <thead>
+            <tr>
+              <th>Week</th>
+              <th class="r">In</th>
+              <th class="r">Uit</th>
+              <th class="r">Verschil</th>
+            </tr>
+          </thead>
+          <tbody id="plaatsing-table">
+            <tr><td colspan="4" style="text-align:center;">Geen data</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Karren & Fases In/Uit -->
+    <div class="section">
+      <h2>Karren & fases in/uit productie (4 weken)</h2>
+      <div class="card">
+        <div class="chartbox">
+          <canvas id="chart-fases"></canvas>
+        </div>
+        <table style="margin-top: 12px;">
+          <thead>
+            <tr>
+              <th>Week</th>
+              <th class="r">Fases in</th>
+              <th class="r">Fases uit</th>
+              <th class="r">Karren in</th>
+              <th class="r">Karren uit</th>
+            </tr>
+          </thead>
+          <tbody id="fases-table">
+            <tr><td colspan="5" style="text-align:center;">Geen data</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <b>Obumex</b> — Bankerwerkers & Productie Planning • Realtime data via Firebase
+  </footer>
+</div>
+
+<script>
+function showErr(msg) {
+  document.getElementById('error').textContent = msg;
+  document.getElementById('error').style.display = 'block';
+}
+
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+}
+
+// Firebase config - extraheren uit index.html
+let chartsInit = {};
+
+function initCharts() {
+  if (!chartsInit.plaatsing) {
+    const ctx1 = document.getElementById('chart-plaatsing');
+    if (ctx1) {
+      chartsInit.plaatsing = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'Ingekomen', data: [], backgroundColor: '#1d6b46', borderColor: '#1d6b46' },
+            { label: 'Uitgegaan', data: [], backgroundColor: '#b07d0a', borderColor: '#b07d0a' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } }
+      });
+    }
+  }
+
+  if (!chartsInit.fases) {
+    const ctx2 = document.getElementById('chart-fases');
+    if (ctx2) {
+      chartsInit.fases = new Chart(ctx2, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'Fases in', data: [], borderColor: '#1d6b46', backgroundColor: 'rgba(29,107,70,0.1)' },
+            { label: 'Fases uit', data: [], borderColor: '#b07d0a', backgroundColor: 'rgba(176,125,10,0.1)' },
+            { label: 'Karren in', data: [], borderColor: '#C8A96E', backgroundColor: 'rgba(200,169,110,0.1)' },
+            { label: 'Karren uit', data: [], borderColor: '#a23b3b', backgroundColor: 'rgba(162,59,59,0.1)' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } }
+      });
+    }
+  }
+}
+
+// Simulatiedata (tot Firebase geconfigureerd is)
+function loadDemoData() {
+  document.getElementById('kpi-retours').textContent = '2.4';
+  document.getElementById('kpi-doorlooptijd').textContent = '8.3';
+  document.getElementById('kpi-output').textContent = '14';
+
+  document.getElementById('week-count').textContent = '14';
+  document.getElementById('week-plaatsing').textContent = '143.5';
+  document.getElementById('week-avg').textContent = '10.3';
+
+  const weeks = ['W25', 'W26', 'W27', 'W28'];
+  const fasesList = [
+    { fase: '001', project: 'PRJ-2024-A', plaatsing: 8.5, status: 'Afgewerkt' },
+    { fase: '002', project: 'PRJ-2024-B', plaatsing: 12.0, status: 'Afgewerkt' },
+    { fase: '003', project: 'PRJ-2024-C', plaatsing: 15.5, status: 'In progress' }
+  ];
+
+  let html = '';
+  fasesList.forEach(f => {
+    html += `<tr>
+      <td><strong>${f.fase}</strong></td>
+      <td>${f.project}</td>
+      <td class="r">${f.plaatsing.toFixed(1)}</td>
+      <td><span class="tag">${f.status}</span></td>
+    </tr>`;
+  });
+  document.getElementById('week-fases').innerHTML = html;
+
+  initCharts();
+
+  const plaatsData = { labels: weeks, in: [33, 14, 3.5, 20], out: [28, 18, 5, 22] };
+  if (chartsInit.plaatsing) {
+    chartsInit.plaatsing.data.labels = plaatsData.labels;
+    chartsInit.plaatsing.data.datasets[0].data = plaatsData.in;
+    chartsInit.plaatsing.data.datasets[1].data = plaatsData.out;
+    chartsInit.plaatsing.update();
+  }
+
+  let plaatsingHtml = '';
+  weeks.forEach((w, i) => {
+    const diff = plaatsData.in[i] - plaatsData.out[i];
+    plaatsingHtml += `<tr>
+      <td>${w}</td>
+      <td class="r">${plaatsData.in[i]}</td>
+      <td class="r">${plaatsData.out[i]}</td>
+      <td class="r" style="color: ${diff > 0 ? 'var(--green)' : 'var(--red)'}">${diff > 0 ? '+' : ''}${diff.toFixed(1)}</td>
+    </tr>`;
+  });
+  document.getElementById('plaatsing-table').innerHTML = plaatsingHtml;
+
+  const faseData = { labels: weeks, fasesIn: [14, 12, 8, 16], fasesOut: [10, 15, 11, 12], karrenIn: [5, 4, 3, 6], karrenOut: [4, 5, 4, 5] };
+  if (chartsInit.fases) {
+    chartsInit.fases.data.labels = faseData.labels;
+    chartsInit.fases.data.datasets[0].data = faseData.fasesIn;
+    chartsInit.fases.data.datasets[1].data = faseData.fasesOut;
+    chartsInit.fases.data.datasets[2].data = faseData.karrenIn;
+    chartsInit.fases.data.datasets[3].data = faseData.karrenOut;
+    chartsInit.fases.update();
+  }
+
+  let faseHtml = '';
+  weeks.forEach((w, i) => {
+    faseHtml += `<tr>
+      <td>${w}</td>
+      <td class="r">${faseData.fasesIn[i]}</td>
+      <td class="r">${faseData.fasesOut[i]}</td>
+      <td class="r">${faseData.karrenIn[i]}</td>
+      <td class="r">${faseData.karrenOut[i]}</td>
+    </tr>`;
+  });
+  document.getElementById('fases-table').innerHTML = faseHtml;
+
+  hideLoading();
+}
+
+// Start
+document.addEventListener('DOMContentLoaded', function() {
+  setTimeout(() => {
+    loadDemoData();
+  }, 500);
+});
+</script>
+</body>
+</html>
