@@ -134,7 +134,8 @@ async function main() {
   } catch (e) { log('  planned-orders overgeslagen:', e.message); }
 
   let otd = null;
-  var weekly = { finished: {}, "new": {}, byCell: { Bankwerk: {}, CNC: {} }, forecast: {}, forecastNext: [] };
+  var weekly = { finished: {}, "new": {}, byCell: { Bankwerk: {}, CNC: {} }, forecast: {}, forecastNext: [], finishedLast: [] };
+  var leadtime = null;
   try {
     log('Ophalen orders + closed batches (OTD + weekreeksen)...');
     const orders = await getAllPages('/extapi/v1/production-orders/search', { archived: false });
@@ -151,8 +152,10 @@ async function main() {
     }
     const closed = await getAllPages('/extapi/v1/report/po-batches/closed', { actualEndDtFrom: fromDT, actualEndDtTo: toDT });
     let on = 0, late = 0, byCust = {};
+    var lastK = isoWeekKey(new Date(Date.now() - 604800000)), ltFases = [], ltSum = 0, ltN = 0;
     for (const b of closed) {
-      if (b.actualEndDt) { var fk = isoWeekKey(new Date(b.actualEndDt)); weekly.finished[fk] = (weekly.finished[fk] || 0) + 1; }
+      if (b.actualEndDt) { var fk = isoWeekKey(new Date(b.actualEndDt)); weekly.finished[fk] = (weekly.finished[fk] || 0) + 1; if (fk === lastK) weekly.finishedLast.push({ po: b.productionOrderCode + '-' + b.code, oms: b.itemCode || '' }); }
+      if (b.actualStartDt && b.actualEndDt) { var _s = new Date(b.actualStartDt), _e = new Date(b.actualEndDt), _d = Math.round((_e - _s) / 86400000); if (_d >= 0) { ltSum += _d; ltN++; ltFases.push({ po: b.productionOrderCode + '-' + b.code, base: baseProject(b.productionOrderCode), start: b.actualStartDt, end: b.actualEndDt, days: _d }); } }
       const ref = reqByBatch[b.productionOrderCode + '||' + b.code];
       if (!ref || !b.actualEndDt) continue;
       const lateF = new Date(b.actualEndDt) > new Date(ref.req);
@@ -160,6 +163,8 @@ async function main() {
       const cc = byCust[ref.cust || '(onbekend)'] || (byCust[ref.cust || '(onbekend)'] = { on: 0, late: 0 });
       if (lateF) cc.late++; else cc.on++;
     }
+    ltFases.sort(function (a, b) { return new Date(b.end) - new Date(a.end); });
+    leadtime = { avgDays: ltN ? Math.round(ltSum / ltN) : null, n: ltN, fases: ltFases.slice(0, 400) };
     if (on + late > 0) otd = { onTime: on, late: late, pct: Math.round(on / (on + late) * 100), byCustomer: byCust };
     log('  OTD:', otd ? otd.pct + '% (' + (on + late) + ' orders)' : 'geen data');
   } catch (e) { log('  OTD/weekreeksen overgeslagen:', e.message); }
@@ -183,7 +188,7 @@ async function main() {
     });
   } catch (e) { log('  prognose overgeslagen:', e.message); }
 
-  const payload = { updatedAt: new Date().toISOString(), window: { fromDT, toDT, weeksAhead: WEEKS_AHEAD }, perProject, perCell, scrapByCell, capByCellWeek, otd, weekly };
+  const payload = { updatedAt: new Date().toISOString(), window: { fromDT, toDT, weeksAhead: WEEKS_AHEAD }, perProject, perCell, scrapByCell, capByCellWeek, otd, weekly, leadtime };
 
   const fbKey = await fetchFirebaseKey();
   const url = 'https://firestore.googleapis.com/v1/projects/' + FB_PROJECT +
