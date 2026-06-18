@@ -130,6 +130,26 @@ border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
   </div>
 
   <div class="row">
+    <div class="card">
+      <h3>Volledig afgewerkte fases per week</h3>
+      <p class="hint">Donker = werkelijk afgewerkt · goud = prognose (planning).</p>
+      <div class="chartbox"><canvas id="cWkFinished"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Afgewerkt per week — Bankwerk vs. CNC</h3>
+      <p class="hint">Aantal cellen afgewerkt per week, per werkpost.</p>
+      <div class="chartbox"><canvas id="cWkCell"></canvas></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="card full">
+      <h3>Instroom vs. uitstroom per week</h3>
+      <p class="hint">Nieuw bijgekomen t.o.v. volledig afgewerkte fases. Loopt instroom voor, dan groeit het orderboek.</p>
+      <div class="chartbox"><canvas id="cWkFlow"></canvas></div>
+      <div id="wkNext" class="hint" style="margin-top:10px"></div>
+    </div>
+  </div>
+  <div class="row">
     <div class="card full">
       <h3>Ingepland vs. effectief gewerkte uren</h3>
       <p class="hint">Live uit Propos via automatische sync (elke nacht). De handmatige upload onderaan blijft mogelijk als reserve.</p>
@@ -560,6 +580,30 @@ function renderEvo(){
   var n=$('evoNote');if(n)n.textContent=dates.length<2?'Nog één meetpunt — de lijnen groeien naarmate het dashboard dagelijks opent (of via een geplande taak).':(dates.length+' meetpunten sinds '+labs[0]+'.');
 }
 
+/* ---------- weekreeksen (throughput + prognose) ---------- */
+function _isoWeekKey(d){var t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));var day=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-day);var ys=new Date(Date.UTC(t.getUTCFullYear(),0,1));var wk=Math.ceil((((t-ys)/86400000)+1)/7);return t.getUTCFullYear()+'-W'+(wk<10?'0'+wk:wk);}
+function _weekRange(back,fwd){var out=[],now=Date.now();for(var i=back;i>=1;i--)out.push(new Date(now-i*604800000));out.push(new Date(now));for(var j=1;j<=fwd;j++)out.push(new Date(now+j*604800000));return out.map(function(d){var k=_isoWeekKey(d);return {key:k,label:k.slice(6)};});}
+function renderWeekly(P){
+  var w=P&&P.weekly;if(!w)return;
+  var nowKey=_isoWeekKey(new Date());
+  var range=_weekRange(11,5);
+  var labels=range.map(function(r){return r.label;});
+  var curIdx=-1;range.forEach(function(r,i){if(r.key===nowKey)curIdx=i;});if(curIdx<0)curIdx=range.length-6;
+  var finS=range.map(function(r,i){return (i<=curIdx)?((w.finished&&w.finished[r.key])||0):null;});
+  var fcS=range.map(function(r,i){return (i>=curIdx)?((w.forecast&&w.forecast[r.key])||0):null;});
+  mkChart('cWkFinished',{type:'bar',data:{labels:labels,datasets:[{label:'Afgewerkt',data:finS,backgroundColor:'#111'},{label:'Prognose',data:fcS,backgroundColor:'#C8A96E'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}});
+  var bw=range.map(function(r){return (w.byCell&&w.byCell.Bankwerk&&w.byCell.Bankwerk[r.key])||0;});
+  var cnc=range.map(function(r){return (w.byCell&&w.byCell.CNC&&w.byCell.CNC[r.key])||0;});
+  mkChart('cWkCell',{type:'bar',data:{labels:labels,datasets:[{label:'Bankwerk',data:bw,backgroundColor:'#111'},{label:'CNC',data:cnc,backgroundColor:'#a23b3b'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}});
+  var nw=range.map(function(r,i){return (i<=curIdx)?((w['new']&&w['new'][r.key])||0):null;});
+  var fin2=range.map(function(r,i){return (i<=curIdx)?((w.finished&&w.finished[r.key])||0):null;});
+  mkChart('cWkFlow',{type:'line',data:{labels:labels,datasets:[{label:'Nieuw bijgekomen',data:nw,borderColor:'#b07d0a',backgroundColor:'#b07d0a',tension:.25,fill:false,pointRadius:3},{label:'Volledig afgewerkt',data:fin2,borderColor:'#1d6b46',backgroundColor:'#1d6b46',tension:.25,fill:false,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}});
+  var nextKey=_isoWeekKey(new Date(Date.now()+604800000));
+  var nextN=(w.forecast&&w.forecast[nextKey])||0;
+  var el=$('wkNext');
+  if(el){var lst=(w.forecastNext||[]).slice(0,12);el.innerHTML='<b>Volgende week ('+nextKey.slice(6)+') verwacht volledig klaar: '+nextN+' fases.</b>'+(lst.length?'<div style="margin-top:6px;columns:2">'+lst.map(function(x){return '• '+x.po+(x.oms?' — '+x.oms:'');}).join('<br>')+'</div>':'');}
+}
+
 /* ---------- boot: pull firebase config from index.html ---------- */
 (function(){
   fetch('./index.html',{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
@@ -569,7 +613,7 @@ function renderEvo(){
     try{firebase.initializeApp(cfg);}catch(e){}
     var db=firebase.firestore();
     db.doc('planning/propos_uren').onSnapshot(function(s){PROPOSUREN=(s.exists&&s.data().map)?s.data().map:{};var st=$('effImpStatus');if(st&&s.exists&&s.data().updatedAt)st.textContent='laatst geïmporteerd: '+String(s.data().updatedAt).slice(0,10)+' · '+(s.data().count||Object.keys(PROPOSUREN).length)+' fases';renderEff();},function(){if(PROPOSUREN==null)PROPOSUREN={};});
-    db.doc('planning/propos_live').onSnapshot(function(s){try{PLIVE=(s.exists&&s.data().payload)?JSON.parse(s.data().payload):null;}catch(e){PLIVE=null;}renderEff();},function(){});
+    db.doc('planning/propos_live').onSnapshot(function(s){try{PLIVE=(s.exists&&s.data().payload)?JSON.parse(s.data().payload):null;}catch(e){PLIVE=null;}renderEff();try{renderWeekly(PLIVE);}catch(e){}},function(){});
     db.doc('planning/gedeeld').onSnapshot(function(snap){
       if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
       try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
