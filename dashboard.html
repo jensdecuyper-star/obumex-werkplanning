@@ -347,19 +347,16 @@ function render(D){
 
 /* ---------- boot: pull firebase config from index.html ---------- */
 (function(){
-  fetch('./index.html',{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
-    var m=html.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})\s*;/);
-    if(!m)m=html.match(/initializeApp\(\s*(\{[\s\S]*?\})\s*\)/);
-    if(!m){showErr('Kon de Firebase-configuratie niet uit de planning-app halen.');return;}
-    var cfg;try{cfg=(new Function('return ('+m[1]+')'))();}catch(e){showErr('Config niet leesbaar: '+e.message);return;}
-    try{firebase.initializeApp(cfg);}catch(e){}
-    var db=firebase.firestore();
-    db.doc('planning/gedeeld').onSnapshot(function(snap){
-      if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
-      try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
-    },function(err){showErr('Verbinding met de data mislukt: '+err.message);});
-  }).catch(function(e){showErr('Kon index.html niet laden: '+e.message);});
-})();
+var cfg = {
+    apiKey: "AIzaSyD91-IXDBEchW20ECxh3fvRKEiujkeLLWE",
+    authDomain: "obumex-werkplanning.firebaseapp.com",
+    projectId: "obumex-werkplanning",
+    storageBucket: "obumex-werkplanning.firebasestorage.app",
+    messagingSenderId: "33507549385",
+    appId: "1:33507549385:web:afcd3c582c7de0a74f6d18"
+};
+  try{firebase.initializeApp(cfg);}catch(e){}
+  var db=firebase.firestore();
 </script>
 </body>
 </html>
