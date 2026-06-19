@@ -1,1 +1,365 @@
-—€€€€€€€[ORIGINELE DASHBOARD CONTENT GOES HERE]
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obumex — Management Dashboard</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--ink:#111;--mut:#777;--line:#e3e3e3;--bg:#fafafa;--card:#fff;--gold:#C8A96E;
+--green:#1d6b46;--amber:#b07d0a;--red:#a23b3b;--greenbg:#e9f3ee;--amberbg:#f7efdd;--redbg:#f5e7e7;}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+font-family:"Sofia Pro","Sofia Pro Regular",Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;}
+a{color:inherit}
+.wrap{max-width:1280px;margin:0 auto;padding:22px 26px 60px;}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:6px;}
+header .left{display:flex;align-items:flex-end;gap:18px}
+header img{height:34px;display:block}
+header .ttl{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);
+border-left:1px solid var(--line);padding-left:18px;line-height:1.3}
+header .ttl b{display:block;color:var(--ink);font-size:16px;letter-spacing:.04em;text-transform:none}
+header .status{text-align:right;font-size:11.5px;color:var(--mut);line-height:1.5}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#bbb;margin-right:5px;vertical-align:middle}
+.dot.live{background:var(--green);box-shadow:0 0 0 3px rgba(29,107,70,.15)}
+.note{font-size:11.5px;color:var(--mut);margin:10px 0 18px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 15px;position:relative;overflow:hidden}
+.kpi .lab{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);margin-bottom:7px;min-height:26px}
+.kpi .val{font-size:27px;font-weight:600;line-height:1}
+.kpi .sub{font-size:11.5px;color:var(--mut);margin-top:6px;min-height:15px}
+.kpi.good{background:var(--greenbg)} .kpi.good .val{color:var(--green)}
+.kpi.warn{background:var(--amberbg)} .kpi.warn .val{color:var(--amber)}
+.kpi.bad{background:var(--redbg)} .kpi.bad .val{color:var(--red)}
+.kpi .bar{position:absolute;top:0;left:0;height:3px;background:var(--gold)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:15px 17px}
+.card h3{margin:0 0 3px;font-size:14px;letter-spacing:.02em}
+.card .hint{font-size:11px;color:var(--mut);margin:0 0 12px}
+.chartbox{position:relative;height:230px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);font-weight:600}
+td.r,th.r{text-align:right}
+.tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;background:#eee;color:#555;margin:1px 3px 1px 0}
+.tag.red{background:var(--redbg);color:var(--red)} .tag.amb{background:var(--amberbg);color:var(--amber)}
+.stab{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+.gauge{text-align:center}
+.gauge .g{font-size:40px;font-weight:700;line-height:1}
+.gauge .gl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.stab ul{margin:0;padding:0;list-style:none;font-size:12.5px}
+.stab li{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line)}
+.stab li b{font-weight:600}
+.churn{font-size:11.5px;color:var(--mut);margin-top:9px}
+footer{margin-top:34px;border-top:1px solid var(--line);padding-top:12px;
+font-size:10.5px;letter-spacing:.06em;color:var(--mut);text-align:center;line-height:1.8}
+footer b{color:var(--ink);letter-spacing:.1em}
+.full{grid-column:1/-1}
+#err{display:none;background:var(--redbg);color:var(--red);border:1px solid #e3c4c4;
+border-radius:8px;padding:12px 14px;font-size:13px;margin:14px 0}
+#loading{color:var(--mut);font-size:13px;padding:40px 0;text-align:center}
+@media(max-width:980px){.kpis{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="err" style="display:none;padding:20px;background:#fff3cd;color:#856404;border:1px solid #ffc107;border-radius:5px;margin:20px;font-size:14px"></div>
+
+<div id="loading" style="padding:60px 20px;text-align:center;color:#999">Gegevens laden…</div>
+
+<div id="app" style="display:none">
+<div class="wrap">
+  <header>
+    <div class="left">
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGZpbGwgY3g9IjE2IiBjeT0iMTYiIHI9IjE1IiBmaWxsPSIjQzhhOTZlIi8+PHBhdHRlcm4gaWQ9ImQiIHBhdHRlcm5Vbml0cz0idXNlclNwYWNlT25Vc2UiIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPjxyZWN0IHdpZHRoPSIyIiBoZWlnaHQ9IjIiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4xIi8+PC9wYXR0ZXJuPjxyZWN0IHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgZmlsbD0idXJsKCNkKSIvPjwvc3ZnPg==" alt="Obumex">
+      <div class="ttl">Management<br><b>Dashboard</b></div>
+    </div>
+    <div class="status">
+      <div><span class="dot" id="livedot"></span><span id="livetxt">verbinden…</span></div>
+      <div style="color:#ccc;margin-top:3px"><small id="updated">—</small></div>
+    </div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="note">KPIs in uw toevoer → → → toevoer + planning → → → fases in voorbereiding / in productie</div>
+
+  <div class="row">
+    <div class="card">
+      <h3>Bezetting dit moment</h3>
+      <p class="hint">Gepland werk vs. beschikbare capaciteit (komende week).</p>
+      <div class="chartbox"><canvas id="cBezet"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Op-tijd-score (ingeplande fases)</h3>
+      <p class="hint">Fractieklaar-datum vs. deadline per fase — wat is het resultaat tot nu toe.</p>
+      <div class="chartbox"><canvas id="cOntime"></canvas></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h3>Productieklaar per maand</h3>
+      <p class="hint">Afgewerkt (historie) en prognose, op basis van productieklaar-datum.</p>
+      <div class="chartbox"><canvas id="cMaand"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Bottlenecks — werk per processtap</h3>
+      <p class="hint">Aantal routes dat nu in elke stap zit. De volste stap is de flessenhals.</p>
+      <div class="chartbox"><canvas id="cBottle"></canvas></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card full">
+      <h3>Aankomende deadlines met risico</h3>
+      <p class="hint">Deadlines binnen 4 weken (of al verstreken) die nog niet veilig zijn.</p>
+      <div id="riskTable"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card full">
+      <h3>Planningsstabiliteit</h3>
+      <p class="hint">Hoeveel van de ingeplande fases staat &quot;stevig&quot; (op tijd, bankwerk-klaar, niet geblokkeerd).</p>
+      <div class="stab">
+        <div class="gauge"><div class="g" id="stabVal">—</div><div class="gl">stabiel</div></div>
+        <div><ul id="stabList"></ul><div class="churn" id="churn"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div>DIKSMUIDESTRAAT 121 | 8840 STADEN | T +32 51 70 50 71 | DESIGN@OBUMEX.BE</div>
+  <div><b>WWW.OBUMEX.BE</b> | STADEN · KNOKKE · GENT · PARIJS · ZURICH</div>
+</footer>
+</div>
+
+<script>
+"use strict";
+var CH={};
+function $(id){return document.getElementById(id);}
+function showErr(m){var e=$('err');e.style.display='block';e.textContent=m;$('loading').style.display='none';}
+
+/* ---------- date / key helpers ---------- */
+function bMon(){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d;}
+var BASE,GTODAY,JOBS,PLAN,BW,EV,HOL,WD,NAV,MAT,PLACED;
+function gDate(g){var d=new Date(BASE);d.setDate(BASE.getDate()+g);return d;}
+function gToday(){var t=new Date();t.setHours(0,0,0,0);return Math.round((t-BASE)/864e5);}
+function keyG(k){var p=String(k).split('_');var wo=parseInt(p[0],10),di=parseInt(p[p.length-1],10);return (isNaN(wo)||isNaN(di))?null:wo*7+di;}
+function iso(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+function isWD(d){return WD.indexOf(d.getDay())>=0 && !HOL[iso(d)];}
+function addWD(g,n){var c=g,a=0,guard=0;while(a<n&&guard++<1000){c++;if(isWD(gDate(c)))a++;}return c;}
+function wdBetween(a,b){if(a==null||b==null||b<a)return 0;var n=0;for(var g=a+1;g<=b;g++){if(isWD(gDate(g)))n++;}return n;}
+function parseDMY(s){if(!s)return null;var p=String(s).trim().split(/[-\/.]/);if(p.length!==3)return null;var y=+p[2];if(y<100)y+=2000;var d=new Date(y,(+p[1])-1,+p[0]);return isNaN(d.getTime())?null:d;}
+function dlG(s){var d=parseDMY(s);if(!d)return null;d.setHours(0,0,0,0);return Math.round((d-BASE)/864e5);}
+function dM(d){return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);}
+function dMY(d){return dM(d)+'/'+d.getFullYear();}
+function isoWeek(d){var t=new Date(d);t.setHours(0,0,0,0);t.setDate(t.getDate()+3-((t.getDay()+6)%7));var w1=new Date(t.getFullYear(),0,4);return 1+Math.round(((t-w1)/864e5-3+((w1.getDay()+6)%7))/7);}
+var MND=['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+
+/* ---------- job helpers ---------- */
+function endG(j){var a=PLACED[j.id];return (a&&a.length)?Math.max.apply(null,a):null;}
+function startG(j){var a=PLACED[j.id];return (a&&a.length)?Math.min.apply(null,a):null;}
+function prodG(j){var e=endG(j);return e==null?null:addWD(e,6);}
+function isPlanned(j){return !!(PLACED[j.id]&&PLACED[j.id].length);}
+function baseProj(j){var s=String((j.project||j.nr||'')).trim();var m=s.match(/^(P\d+-\d+(?:_\d+)?)/i);return m?m[1]:(s||j.klant||'(zonder)');}
+function routesOf(j){return Array.isArray(j.routes)?j.routes:[];}
+function atAutorisatie(j){var rs=routesOf(j);if(!rs.length)return false;return rs.every(function(r){return String(r.cel||'').trim().toLowerCase()==='autorisatie';});}
+function readyBankwerk(j){var rs=routesOf(j);if(!rs.length)return false;return rs.every(function(r){return /bankwerk|schuren|tussencontrole|kleur|vernis|lak/i.test(r.cel||'');});}
+function stand(j){var rs=routesOf(j),r=null,i;for(i=0;i<rs.length;i++){if(/r4/i.test(rs[i].route||'')){r=rs[i];break;}}if(!r)r=rs[0];return r?(r.cel||''):'';}
+function openMat(j){var key=(j.project||'')+'||'+(j.fase||'');var lines=MAT[key]||MAT[j.id]||MAT[j.fase]||[];if(!Array.isArray(lines))return 0;return lines.filter(function(l){var b=String(l.binnen||l.ontvangen||'').toLowerCase();return !(b==='ja'||b==='1'||b==='true'||/binnen|ontvangen|ok/.test(b));}).length;}
+function isSick(pid,g){var wo=Math.floor(g/7),di=g-wo*7;var k=wo+'_'+pid+'_'+di;var v=EV[k];if(!v)return false;var t=typeof v==='string'?v:(v.type||v.kind||'');return /ziek|sick|verlof|afwezig/i.test(t);}
+function canon(cel){var c=String(cel||'').toLowerCase();
+  if(!c)return null;
+  if(/autoris/.test(c))return 'Autorisatie';
+  if(/optimal/.test(c))return 'Optimalisatie';
+  if(/cnc/.test(c))return 'CNC';
+  if(/massief/.test(c))return 'Massief';
+  if(/fineer/.test(c))return 'Fineer';
+  if(/kant/.test(c))return 'Kantafwerking';
+  if(/bankwerk/.test(c))return 'Bankwerk';
+  if(/schuren/.test(c))return 'Schuren';
+  if(/tussen/.test(c))return 'Tussencontrole';
+  if(/kleur|vernis/.test(c))return 'Kleuren/vernissen';
+  if(/lak/.test(c))return 'Lakken';
+  return 'Andere';}
+
+function weekCap(sg){var cap=0,d,g,dt;for(d=0;d<7;d++){g=sg+d;dt=gDate(g);if(!isWD(dt))continue;BW.forEach(function(p){var off=(p.offDays||[]).indexOf(dt.getDay())>=0;if(off)return;if(isSick(p.id,g))return;cap+=(+p.hrs||8);});}return cap;}
+function weekLoad(sg){var load=0;JOBS.forEach(function(j){if(j.done)return;var g=startG(j);if(g==null)return;if(g>=sg&&g<sg+7)load+=(+j.hrs||0);});return load;}
+
+/* ---------- render ---------- */
+function kpi(lab,val,sub,tone){return '<div class="kpi '+(tone||'')+'"><div class="bar" style="width:100%"></div><div class="lab">'+lab+'</div><div class="val">'+val+'</div><div class="sub">'+(sub||'')+'</div></div>';}
+
+function mkChart(id,cfg){if(CH[id]){CH[id].destroy();}CH[id]=new Chart($(id).getContext('2d'),cfg);}
+
+function render(D){
+  BASE=bMon();GTODAY=gToday();
+  JOBS=(D.jobs||[]).filter(function(j){return j&&j.id;});
+  PLAN=D.plan||{};BW=(D.bw||[]).filter(Boolean);EV=D.events||{};HOL=D.holidays||{};
+  WD=(Array.isArray(D.workDays)&&D.workDays.length)?D.workDays:[1,2,3,4,5];
+  NAV=D.navOpen||{};MAT=D.materiaal||{};
+  PLACED={};Object.keys(PLAN).forEach(function(k){var g=keyG(k);if(g==null)return;(PLAN[k]||[]).forEach(function(id){(PLACED[id]=PLACED[id]||[]).push(g);});});
+
+  var active=JOBS.filter(function(j){return !j.done;});
+
+  /* capacity over 8 weeks */
+  var weeks=[],loads=[],caps=[],labs=[],w;
+  for(w=0;w<8;w++){var sg=w*7;var c=weekCap(sg),l=weekLoad(sg);weeks.push(sg);caps.push(c);loads.push(l);labs.push('w'+isoWeek(gDate(sg)));}
+  var capNow=caps[0]||0, loadNow=loads[0]||0;
+  var bezetNow=capNow?Math.round(loadNow/capNow*100):0;
+  var avgCap=0,cn=0;caps.forEach(function(c){if(c>0){avgCap+=c;cn++;}});avgCap=cn?avgCap/cn:0;
+
+  /* horizon */
+  var maxEnd=null;active.forEach(function(j){var e=endG(j);if(e!=null&&(maxEnd==null||e>maxEnd))maxEnd=e;});
+  var horTxt = maxEnd==null?'—':dMY(gDate(maxEnd));
+  var horWk = maxEnd==null?0:Math.max(0,Math.ceil((maxEnd-GTODAY)/7));
+
+  /* orderboek */
+  var openHrs=0;active.forEach(function(j){if(atAutorisatie(j))return;openHrs+=(+j.hrs||0);});
+  var orderWk=avgCap?(openHrs/avgCap):0;
+
+  /* on-time */
+  var onT=0,late=0;
+  active.forEach(function(j){if(!isPlanned(j))return;var dg=dlG(j.deadline);if(dg==null)return;var pk=prodG(j);if(pk==null)return;if(pk>dg)late++;else onT++;});
+  var onPct=(onT+late)?Math.round(onT/(onT+late)*100):100;
+
+  /* risico deadlines */
+  var risk=[];
+  active.forEach(function(j){var dg=dlG(j.deadline);if(dg==null)return;if(dg>GTODAY+28)return;
+    var reasons=[],pk=prodG(j);
+    if(!isPlanned(j))reasons.push(['niet ingepland','red']);
+    else if(pk!=null&&pk>dg)reasons.push(['productieklaar ná deadline','red']);
+    if(atAutorisatie(j))reasons.push(['nog bij autorisatie','amb']);
+    else if(isPlanned(j)&&!readyBankwerk(j))reasons.push(['nog niet bankwerk-klaar','amb']);
+    if(j.blocked)reasons.push(['geblokkeerd','red']);
+    if(openMat(j)>0)reasons.push(['materiaal open','amb']);
+    if(dg<GTODAY&&!reasons.length)reasons.push(['deadline verstreken','red']);
+    if(!reasons.length)return;
+    risk.push({j:j,dg:dg,pk:pk,reasons:reasons});});
+  risk.sort(function(a,b){return a.dg-b.dg;});
+
+  /* productieklaar per maand: window -6 .. +4 months */
+  var now=new Date();var baseYM=now.getFullYear()*12+now.getMonth();
+  var buckets={};for(w=-6;w<=4;w++)buckets[baseYM+w]=0;
+  var doneThisMonth=0;
+  JOBS.forEach(function(j){var pk=prodG(j);if(pk==null)return;var d=gDate(pk);var ym=d.getFullYear()*12+d.getMonth();if(ym in buckets)buckets[ym]+=1;if(ym===baseYM&&j.done)doneThisMonth++;});
+  var mlabs=[],mvals=[],mcolors=[];for(w=-6;w<=4;w++){var ym=baseYM+w;var yy=Math.floor(ym/12),mm=ym%12;mlabs.push(MND[mm]+(mm===0||w===-6?(" '"+String(yy).slice(-2)):''));mvals.push(buckets[ym]);mcolors.push(w<0?'#9aa0a6':(w===0?'#111':'#C8A96E'));}
+
+  /* doorlooptijd over voltooide projecten */
+  var byProj={};JOBS.forEach(function(j){var bp=baseProj(j);(byProj[bp]=byProj[bp]||[]).push(j);});
+  var dts=[],dtsAll=[];
+  Object.keys(byProj).forEach(function(bp){var arr=byProj[bp];var planned=arr.filter(isPlanned);if(!planned.length)return;
+    var mn=Math.min.apply(null,planned.map(startG));var mx=Math.max.apply(null,planned.map(prodG));
+    if(mn==null||mx==null)return;var dur=wdBetween(mn,mx);if(dur<=0)return;
+    dtsAll.push(dur);if(arr.every(function(j){return j.done;}))dts.push(dur);});
+  var useDt=dts.length>=3?dts:dtsAll;
+  var avgDt=useDt.length?Math.round(useDt.reduce(function(a,b){return a+b;},0)/useDt.length):0;
+
+  /* bottlenecks */
+  var cells={},order=['Autorisatie','Optimalisatie','CNC','Massief','Fineer','Kantafwerking','Bankwerk','Schuren','Tussencontrole','Kleuren/vernissen','Lakken','Andere'];
+  active.forEach(function(j){routesOf(j).forEach(function(r){var c=canon(r.cel);if(!c)return;cells[c]=(cells[c]||0)+1;});});
+  var blabs=[],bvals=[];order.forEach(function(c){if(cells[c]){blabs.push(c);bvals.push(cells[c]);}});
+  var prodStages=['CNC','Massief','Fineer','Kantafwerking','Bankwerk','Schuren'];
+  var botName='—',botVal=0;blabs.forEach(function(c,i){if(prodStages.indexOf(c)>=0&&bvals[i]>botVal){botVal=bvals[i];botName=c;}});
+  var bcolors=blabs.map(function(c){return c===botName?'#a23b3b':'#333';});
+
+  /* stability */
+  var plannedJobs=active.filter(isPlanned);
+  var nRevised=active.filter(function(j){return j.revised;}).length;
+  var nBlocked=active.filter(function(j){return j.blocked;}).length;
+  var nNotReady=plannedJobs.filter(function(j){return !readyBankwerk(j);}).length;
+  var atRisk=plannedJobs.filter(function(j){var pk=prodG(j),dg=dlG(j.deadline);var lateF=(dg!=null&&pk!=null&&pk>dg);return lateF||!readyBankwerk(j)||j.blocked;}).length;
+  var stabIdx=plannedJobs.length?Math.round(100*(1-atRisk/plannedJobs.length)):100;
+  var nTeTekenen=Object.keys(NAV).filter(function(k){var v=NAV[k];return v&&(!Array.isArray(v)||v.length);}).length;
+  var nMatOpen=active.filter(function(j){return openMat(j)>0;}).length;
+
+  /* churn vs last snapshot */
+  var snapNow={};plannedJobs.forEach(function(j){snapNow[j.id]=startG(j);});
+  var churnTxt='';
+  try{var prev=JSON.parse(localStorage.getItem('obx_dash_snap')||'null');
+    if(prev&&prev.map){var moved=0,nw=0,gone=0,k;
+      for(k in snapNow){if(!(k in prev.map))nw++;else if(prev.map[k]!==snapNow[k])moved++;}
+      for(k in prev.map){if(!(k in snapNow))gone++;}
+      churnTxt='Sinds '+prev.date+': <b>'+moved+'</b> fases verschoven, <b>'+nw+'</b> nieuw ingepland, <b>'+gone+'</b> verdwenen uit de planning.';
+    }else{churnTxt='Eerste meting opgeslagen — verschuivingen verschijnen vanaf je volgende bezoek.';}
+    localStorage.setItem('obx_dash_snap',JSON.stringify({date:dMY(new Date()),map:snapNow}));
+  }catch(e){churnTxt='';}
+
+  /* ===== paint KPIs ===== */
+  var bezTone=bezetNow>100?'bad':(bezetNow>=80?'good':(bezetNow>=50?'warn':''));
+  var k='';
+  k+=kpi('Bezetting deze week',bezetNow+'%',Math.round(loadNow)+' u gepland / '+Math.round(capNow)+' u',bezTone);
+  k+=kpi('Werk ingepland t.e.m.',horTxt,'± '+horWk+' weken vooruit','');
+  k+=kpi('Orderboek',(Math.round(orderWk*10)/10)+' wk','openstaand '+Math.round(openHrs)+' u','');
+  k+=kpi('Ingepland op tijd',onPct+'%',late+' fase(s) ná deadline',onPct>=90?'good':(onPct>=75?'warn':'bad'));
+  k+=kpi('Risico-deadlines (4 wk)',risk.length,'vragen opvolging',risk.length===0?'good':(risk.length<=5?'warn':'bad'));
+  k+=kpi('Afgewerkt deze maand',doneThisMonth,'fases productieklaar','');
+  k+=kpi('Gem. doorlooptijd',avgDt+' wd','1e bankwerkdag → klaar','');
+  k+=kpi('Planningsstabiliteit',stabIdx+'%','staat stevig ingepland',stabIdx>=85?'good':(stabIdx>=70?'warn':'bad'));
+  $('kpis').innerHTML=k;
+
+  /* ===== charts ===== */
+  mkChart('cBezet',{type:'bar',data:{labels:labs,datasets:[
+    {label:'Capaciteit',data:caps,backgroundColor:'#e8e8e8',borderColor:'#d4d4d4',borderWidth:1,order:2},
+    {label:'Gepland',data:loads,backgroundColor:loads.map(function(l,i){return l>caps[i]?'#a23b3b':'#C8A96E';}),order:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,title:{display:true,text:'uren'}},x:{grid:{display:false}}}}});
+
+  mkChart('cOntime',{type:'doughnut',data:{labels:['Op tijd','Ná deadline'],datasets:[{data:[onT,late],backgroundColor:['#1d6b46','#a23b3b']}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:function(c){return c.label+': '+c.parsed;}}}}}});
+
+  mkChart('cMaand',{type:'bar',data:{labels:mlabs,datasets:[{label:'Fases',data:mvals,backgroundColor:mcolors}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:function(c){return c[0].label;}}}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}});
+
+  mkChart('cBottle',{type:'bar',data:{labels:blabs,datasets:[{label:'Routes',data:bvals,backgroundColor:bcolors}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{precision:0}}}}});
+
+  /* ===== risk table ===== */
+  var rh='<table><thead><tr><th>P-nummer</th><th>Klant</th><th>Fase</th><th>Deadline</th><th>Productieklaar</th><th>Risico</th></tr></thead><tbody>';
+  if(!risk.length)rh+='<tr><td colspan="6" style="color:#1d6b46">Geen risico-deadlines binnen 4 weken. 👍</td></tr>';
+  risk.slice(0,14).forEach(function(r){var j=r.j;var pkt=r.pk==null?'—':dMY(gDate(r.pk));var late=r.pk!=null&&r.pk>r.dg;
+    rh+='<tr><td><b>'+(baseProj(j))+'</b></td><td>'+(j.klant||'')+'</td><td>'+(j.fase||j.desc||'')+'</td><td>'+dMY(gDate(r.dg))+'</td><td style="color:'+(late?'#a23b3b':'inherit')+'">'+pkt+'</td><td>'+r.reasons.map(function(x){return '<span class="tag '+x[1]+'">'+x[0]+'</span>';}).join('')+'</td></tr>';});
+  rh+='</tbody></table>';
+  if(risk.length>14)rh+='<p class="hint">+ '+(risk.length-14)+' meer…</p>';
+  $('riskTable').innerHTML=rh;
+
+  /* ===== stability ===== */
+  $('stabVal').textContent=stabIdx+'%';
+  $('stabVal').style.color=stabIdx>=85?'#1d6b46':(stabIdx>=70?'#b07d0a':'#a23b3b');
+  $('stabList').innerHTML=
+    '<li><span>Ingeplande fases</span><b>'+plannedJobs.length+'</b></li>'+
+    '<li><span>Ná deadline ingepland</span><b>'+late+'</b></li>'+
+    '<li><span>Nog niet bankwerk-klaar</span><b>'+nNotReady+'</b></li>'+
+    '<li><span>Geblokkeerd / on-hold</span><b>'+nBlocked+'</b></li>'+
+    '<li><span>Herziene orders</span><b>'+nRevised+'</b></li>'+
+    '<li><span>Nog te tekenen</span><b>'+nTeTekenen+'</b></li>'+
+    '<li><span>Fases met openstaand materiaal</span><b>'+nMatOpen+'</b></li>';
+  $('churn').innerHTML=churnTxt;
+
+  /* show */
+  $('loading').style.display='none';$('app').style.display='block';
+  $('livedot').className='dot live';$('livetxt').textContent='live verbonden';
+  $('updated').textContent='bijgewerkt '+new Date().toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit'});
+}
+
+/* ---------- boot: pull firebase config from index.html ---------- */
+(function(){
+  fetch('./index.html',{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
+    var m=html.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})\s*;/);
+    if(!m)m=html.match(/initializeApp\(\s*(\{[\s\S]*?\})\s*\)/);
+    if(!m){showErr('Kon de Firebase-configuratie niet uit de planning-app halen.');return;}
+    var cfg;try{cfg=(new Function('return ('+m[1]+')'))();}catch(e){showErr('Config niet leesbaar: '+e.message);return;}
+    try{firebase.initializeApp(cfg);}catch(e){}
+    var db=firebase.firestore();
+    db.doc('planning/gedeeld').onSnapshot(function(snap){
+      if(!snap.exists){showErr('Geen planningsdata gevonden (planning/gedeeld).');return;}
+      try{render(snap.data());}catch(e){showErr('Fout bij verwerken: '+e.message);if(window.console)console.error(e);}
+    },function(err){showErr('Verbinding met de data mislukt: '+err.message);});
+  }).catch(function(e){showErr('Kon index.html niet laden: '+e.message);});
+})();
+</script>
+</body>
+</html>
