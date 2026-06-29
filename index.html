@@ -757,7 +757,7 @@ function wnum(d){const j=new Date(d.getFullYear(),0,1);return Math.ceil(((d-j)/8
 function woOf(g){return Math.floor(g/7);}
 function diOf(g){return g-woOf(g)*7;}
 function gdate(g){const m=wdates(0)[0];const d=new Date(m);d.setHours(0,0,0,0);d.setDate(m.getDate()+g);return d;}
-function gToday(){const m=wdates(0)[0];m.setHours(0,0,0,0);const t=new Date();t.setHours(0,0,0,0);return Math.round((t-m)/86400000);}
+function gToday(){const m=wdates(0)[0];m.setHours(0,0,0,0);const t=new Date();t.setHours(0,0,0,0);return Math.floor((t-m)/86400000);}
 function pkey(pid,g){return`${woOf(g)}_${pid}_${diOf(g)}`}
 function getPlan(pid,g){return(S.plan[pkey(pid,g)]||[]).map(id=>S.jobs.find(j=>j.id===id)).filter(Boolean)}
 function allAssigned(){return new Set(Object.values(S.plan).flat())}
