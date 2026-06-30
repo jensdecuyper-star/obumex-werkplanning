@@ -710,6 +710,8 @@ function save(){
   try{localStorage.setItem('obp8',JSON.stringify(S));}catch(e){}
   if(typeof cloudSave==='function') cloudSave();
 }
+function celFromRoutes(routes){var rs=routes||[];if(rs.some(function(r){return /bankwerk/i.test(r.cel||'');}))return 'Bankwerk';if(rs.some(function(r){return /cnc/i.test(r.cel||'');}))return 'CNC';return 'Bankwerk';}
+function normalizeCel(j){var cu=((j&&j.cel)||'').toUpperCase();if(cu==='CNC')return 'CNC';if(cu==='BANKWERK')return 'Bankwerk';return celFromRoutes(j&&j.routes);}
 function load(){
   try{
     const d=JSON.parse(localStorage.getItem('obp8')||'null');
@@ -721,8 +723,7 @@ function load(){
     if(!S.plan) S.plan={};
     if(!S.jobs) S.jobs=[];
     S.jobs.forEach(j=>{
-      const cu=(j.cel||'').toUpperCase();
-      j.cel = cu==='CNC'?'CNC': cu==='BANKWERK'?'Bankwerk': j.cel;
+      j.cel = normalizeCel(j);
       if(!j.blocked) j.blocked=false;
       if(!j.blockedReason) j.blockedReason='';
       if(!j.blockedUntil) j.blockedUntil='';
@@ -1692,7 +1693,7 @@ function importRows(rows){
       ex.routes=F.routes;
       if(F.deadline&&ex.deadline!==F.deadline){ dlChanges.push({nr:ex.nr,desc:ex.desc,old:ex.deadline,new:F.deadline}); ex.deadline=F.deadline; upd++; }
     } else {
-      S.jobs.push({id:'fase'+Date.now()+Math.random().toString(36).slice(2,6), fase:F.fase, project:F.project, nr:(F.project?F.project+'-':'')+F.fase, klant:F.klant, desc:F.desc, hrs:8, deadline:F.deadline, blocked:false, blockedReason:'', blockedUntil:'', done:false, routes:F.routes});
+      S.jobs.push({id:'fase'+Date.now()+Math.random().toString(36).slice(2,6), fase:F.fase, project:F.project, nr:(F.project?F.project+'-':'')+F.fase, klant:F.klant, desc:F.desc, hrs:8, deadline:F.deadline, blocked:false, blockedReason:'', blockedUntil:'', done:false, routes:F.routes, cel:celFromRoutes(F.routes)});
       added++;
     }
   });
@@ -2515,7 +2516,7 @@ setInterval(()=>{
 },30*60*1000);
 
 // normalize cel values
-S.jobs.forEach(j=>{const cu=(j.cel||'').toUpperCase();j.cel=cu==='CNC'?'CNC':cu==='BANKWERK'?'Bankwerk':j.cel;});
+S.jobs.forEach(j=>{j.cel=normalizeCel(j);});
 render();
 // ========================================
 // CLOUD SYNC (Firebase Firestore) - gedeelde opslag
@@ -2897,7 +2898,7 @@ function migrateToFase(){
     if(j.blocked){F.blocked=true; if(!F.blockedReason)F.blockedReason=j.blockedReason||'';}
   });
   var jobs=order.map(function(k){return map[k];});
-  jobs.forEach(function(F){F.routes=dedupeRoutes(F.routes);});
+  jobs.forEach(function(F){F.routes=dedupeRoutes(F.routes);F.cel=celFromRoutes(F.routes);});
   var o2n={}; jobs.forEach(function(F){F._old.forEach(function(oid){o2n[oid]=F.id;}); delete F._old;});
   var bw={}; (S.bw||[]).forEach(function(p){bw[p.id]=1;});
   var np={};
