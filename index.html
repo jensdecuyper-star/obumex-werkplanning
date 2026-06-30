@@ -476,7 +476,6 @@ body.floor-on{overflow:hidden}
     <button class="tbtn" onclick="openBacklog('cnc')">📈 CNC-backlog</button>
     <button class="tbtn" onclick="openBacklog('bank')">📈 Bankwerk-backlog</button>
     <button class="tbtn" onclick="openMatList()" id="mat-btn" title="Materiaal-opvolging (Navision)">📦 Materiaal <span class="badge-cnt hidden" id="mat-cnt">0</span></button>
-    <button class="tbtn" onclick="openReady()" id="ready-btn" title="Productieklaar: wanneer komt elk project uit productie">📅 Productieklaar</button>
     <span class="vsep"></span>
     <div class="more-wrap">
       <button class="tbtn" onclick="toggleMore(event)">⋯ Meer</button>
@@ -733,6 +732,77 @@ function load(){
   if(!S.events) S.events={};
   if(!S.materiaal) S.materiaal={};
   if(!S.navOpen) S.navOpen={};
+  migrateWeekKeysToAbsolute();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MIGRATION: Convert storage keys from relative week offset to absolute offset
+//
+// OLD SYSTEM (BUGGY): Keys used wdates(0)[0] which changes every Monday
+//   Problem: "0_pid_0" on Monday June 22 becomes unreachable on Monday June 29
+//
+// NEW SYSTEM (FIXED): Keys use fixed FIXED_BASE (2026-01-05) as anchor
+//   Benefit: "26_pid_0" always refers to same absolute week
+// ═══════════════════════════════════════════════════════════════════════════
+function migrateWeekKeysToAbsolute(){
+  if(S._weekMigrated) return; // Only run once
+  if(!S.plan||!Object.keys(S.plan).length) {
+    S._weekMigrated=true;
+    return; // No data to migrate
+  }
+
+  // Calculate the old "Monday of week 0" (what wdates(0)[0] used to calculate)
+  // This was the Monday of the week containing the date when migration runs
+  const now=new Date();
+  const dw=now.getDay();
+  const oldWeekZeroMonday=new Date(now);
+  oldWeekZeroMonday.setDate(now.getDate()-(dw===0?6:dw-1));
+  oldWeekZeroMonday.setHours(0,0,0,0);
+
+  const newPlan={};
+  let migrated=0;
+
+  Object.keys(S.plan).forEach(oldKey=>{
+    const ids=S.plan[oldKey];
+    if(!ids||!ids.length) return;
+
+    // Parse old key format: "wo_pid_di"
+    const parts=oldKey.split('_');
+    if(parts.length<3) return;
+
+    const oldWo=parseInt(parts[0],10);
+    const di=parseInt(parts[parts.length-1],10);
+    const pid=parts.slice(1,-1).join('_');
+
+    if(isNaN(oldWo)||isNaN(di)) return;
+
+    // Calculate the actual date this old key represented
+    // oldWo=0 meant Monday of oldWeekZeroMonday
+    // oldWo=1 meant Monday of oldWeekZeroMonday + 7 days, etc.
+    const oldDate=new Date(oldWeekZeroMonday);
+    oldDate.setDate(oldWeekZeroMonday.getDate()+oldWo*7+di);
+
+    // Convert to new absolute offset from FIXED_BASE
+    const newG=Math.round((oldDate-FIXED_BASE)/86400000);
+    const newWo=woOf(newG);
+    const newDi=diOf(newG);
+    const newKey=`${newWo}_${pid}_${newDi}`;
+
+    if(newKey!==oldKey){
+      newPlan[newKey]=ids;
+      migrated++;
+    }else{
+      newPlan[oldKey]=ids;
+    }
+  });
+
+  S.plan=newPlan;
+  S._weekMigrated=true;
+
+  if(migrated>0){
+    console.log(`Week key migration complete: ${migrated} entries converted to absolute offsets`);
+    save();
+  }
 }
 
 // ════════════════════════════════════════
@@ -747,17 +817,27 @@ function linkedPartner(j){
 }
 function kColor(k){if(!k)return null;if(!_kc[k]){let h=0;for(let i=0;i<k.length;i++)h=(h*31+k.charCodeAt(i))%PAL.length;_kc[k]=PAL[Math.abs(h)%PAL.length];}return _kc[k];}
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CRITICAL FIX: Use ABSOLUTE week base, not dynamic Monday
+// BUG: Old code used wdates(0)[0] which changes every Monday, causing storage
+//      keys to shift and making data disappear. (e.g., "0_pid_X" → "1_pid_X")
+// FIX: Use a FIXED BASE date (2026-01-05, Monday of week 1) as anchor.
+//      All week calculations now use absolute offset from this base.
+// ═══════════════════════════════════════════════════════════════════════════
+const FIXED_BASE = new Date(2026,0,5); // January 5, 2026 (Monday, ISO week 1)
+FIXED_BASE.setHours(0,0,0,0);
+
 function wdates(off=0){
-  const n=new Date(),dw=n.getDay(),m=new Date(n);
-  m.setDate(n.getDate()-(dw===0?6:dw-1)+off*7);
-  return Array.from({length:7},(_,i)=>{const d=new Date(m);d.setDate(m.getDate()+i);return d;});
+  const d=new Date(FIXED_BASE);
+  d.setDate(FIXED_BASE.getDate()+off*7);
+  return Array.from({length:7},(_,i)=>{const dd=new Date(d);dd.setDate(d.getDate()+i);return dd;});
 }
 function fd(d){return`${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}`}
 function wnum(d){const j=new Date(d.getFullYear(),0,1);return Math.ceil(((d-j)/86400000+j.getDay()+1)/7)}
 function woOf(g){return Math.floor(g/7);}
 function diOf(g){return g-woOf(g)*7;}
-function gdate(g){const m=wdates(0)[0];const d=new Date(m);d.setHours(0,0,0,0);d.setDate(m.getDate()+g);return d;}
-function gToday(){const m=wdates(0)[0];m.setHours(0,0,0,0);const t=new Date();t.setHours(0,0,0,0);return Math.floor((t-m)/86400000);}
+function gdate(g){const d=new Date(FIXED_BASE);d.setDate(FIXED_BASE.getDate()+g);return d;}
+function gToday(){const t=new Date();t.setHours(0,0,0,0);return Math.round((t-FIXED_BASE)/86400000);}
 function pkey(pid,g){return`${woOf(g)}_${pid}_${diOf(g)}`}
 function getPlan(pid,g){return(S.plan[pkey(pid,g)]||[]).map(id=>S.jobs.find(j=>j.id===id)).filter(Boolean)}
 function allAssigned(){return new Set(Object.values(S.plan).flat())}
@@ -881,9 +961,7 @@ function render(){
   S.wo=0;
   if(!S.cncBacklog)S.cncBacklog=JSON.parse(JSON.stringify(DEFAULT_CNC_BACKLOG));
   if(!S.bankBacklog)S.bankBacklog=[];
-  if(typeof migrateRouteSplit==='function') migrateRouteSplit();
   if(typeof cleanupPastBankwerk==='function') cleanupPastBankwerk();
-  if(typeof maintainProdDone==='function') maintainProdDone();
   computeSpans();
   renderGrid();
   if(_floorOpen) renderFloor();
@@ -1559,7 +1637,7 @@ function importRows(rows){
   var iNr=col('ponr'),iDesc=col('omschrijving'),iKlant=col('klant'),iCel=col('nu in cel'),iDl=col('geplande einddatum');
   var iStatus=col('status','voortgang','gereed');
   if(iNr<0){ alert('Import kon niet worden uitgevoerd.\n\nVerplichte kolom niet gevonden: ponr (ordernummer).\n\nGevonden kolommen:\n'+hdr.join(', ')); toast('Import gestopt: kolom ontbreekt'); return; }
-  function parseNr(nr){var m=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim(),route:''};}
+  function parseNr(nr){var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim(),route:''};}
   function gk(project,fase){return (project||'')+'||'+fase;}
   var imp={}, order=[];
   rows.slice(hi+1).forEach(function(row){
@@ -2805,7 +2883,7 @@ function migrateToFase(){
   if(!S.jobs)S.jobs=[];
   if(S.jobs.some(function(j){return j.routes;})){S._faseModel=true;return;}
   if(!S.jobs.length){S._faseModel=true;return;}
-  function pn(nr){var m=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim()||'?',route:''};}
+  function pn(nr){var m=String(nr||'').match(/^(P\d+-\d+)-(\d+)-(.+)$/i);if(m)return{project:m[1],fase:m[2],route:m[3]};var m2=String(nr||'').match(/^(P\d+-\d+)-(\d+)$/i);if(m2)return{project:m2[1],fase:m2[2],route:''};return{project:'',fase:String(nr||'').trim()||'?',route:''};}
   var map={},order=[];
   S.jobs.forEach(function(j){
     var pp=pn(j.nr); var key=pp.project+'||'+pp.fase;
@@ -2944,7 +3022,7 @@ function importMateriaal(rows){
   var col=function(){for(var a=0;a<arguments.length;a++){var n=arguments[a];var idx=hdr.findIndex(function(h){return h.indexOf(String(n).toLowerCase())>=0;});if(idx>=0)return idx;}return -1;};
   var iPonr=col('ponr'),iProj=col('project','order'),iFase=col('fase'),iArt=col('artikel','omschrijving','materiaal','item'),iBest=col('bestemming','mijlpaal','milestone'),iIn=col('binnen','ontvangen','ontvangst','geleverd','voorraad'),iLev=col('leverdatum','verwacht','leverweek','aankomst'),iType=col('type verwerking','verwerking'),iExtra=col('extra status');
   if(iFase<0&&iPonr<0){ alert('Import kon niet worden uitgevoerd.\n\nVerwachte kolommen: ponr (of Projectnr. + Fase).\n\nGevonden kolommen:\n'+hdr.join(', ')); return; }
-  function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+(?:_\d+)?)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
+  function pnr(nr){var mm=String(nr||'').match(/^(P\d+-\d+)-(\d+)/i);if(mm)return{project:mm[1],fase:mm[2]};return{project:'',fase:String(nr||'').trim()};}
   var mat={},open={},cM=0,cO=0;
   rows.slice(hi+1).forEach(function(row){
     if(!row||row.every(function(c){return !c;}))return;
@@ -3004,124 +3082,6 @@ function matSample(){
    +'P23-0460-123600;Fineer noten 12mm;atelier;nee;18-06-2026\n';
   var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='materiaal-voorbeeld.csv';document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},200);
 }
-
-function _keyG(k){var p=k.split("_");var wo=parseInt(p[0],10),di=parseInt(p[p.length-1],10);return (isNaN(wo)||isNaN(di))?null:wo*7+di;}
-function faseEndG(j){var last=null;for(var k in S.plan){if(!S.plan.hasOwnProperty(k))continue;if((S.plan[k]||[]).indexOf(j.id)<0)continue;var g=_keyG(k);if(g!=null&&(last==null||g>last))last=g;}if(typeof _spans!=="undefined"&&_spans){for(var sk in _spans){if(!_spans.hasOwnProperty(sk))continue;var arr=_spans[sk]||[];for(var z=0;z<arr.length;z++){if(arr[z].jid===j.id){var ng=parseInt(sk.split("|")[1],10);if(!isNaN(ng)&&(last==null||ng>last))last=ng;}}}}return last;}
-function addWorkdays(g,n){var cur=g,added=0,guard=0;while(added<n&&guard++<800){cur++;var d=gdate(cur);if(S.workDays.includes(d.getDay())&&!S.holidays[d.toISOString().slice(0,10)])added++;}return cur;}
-function fmtDMY(g){var d=gdate(g);return ("0"+d.getDate()).slice(-2)+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+d.getFullYear();}
-function readyData(){if(typeof computeSpans==="function")computeSpans();var byP={};(S.jobs||[]).forEach(function(j){if(j.done||!j.fase)return;var pk=j.project||j.nr||"(zonder project)";if(!byP[pk])byP[pk]={project:pk,klant:j.klant||"",fases:[],maxKlaar:null,unplanned:0};var endG=faseEndG(j);if(endG==null){byP[pk].fases.push({j:j,planned:false});byP[pk].unplanned++;}else{var kg=addWorkdays(endG,6);byP[pk].fases.push({j:j,planned:true,endG:endG,klaarG:kg});if(byP[pk].maxKlaar==null||kg>byP[pk].maxKlaar)byP[pk].maxKlaar=kg;}if(!byP[pk].klant&&j.klant)byP[pk].klant=j.klant;});var list=Object.keys(byP).map(function(k){return byP[k];});list.sort(function(a,b){if(a.maxKlaar==null&&b.maxKlaar==null)return a.project<b.project?-1:1;if(a.maxKlaar==null)return 1;if(b.maxKlaar==null)return -1;return a.maxKlaar-b.maxKlaar;});list.forEach(function(p){p.fases.sort(function(a,b){if(!a.planned&&!b.planned)return a.j.fase<b.j.fase?-1:1;if(!a.planned)return 1;if(!b.planned)return -1;return a.endG-b.endG;});});return list;}
-function openReady(){var ov=document.createElement("div");ov.className="ov";ov.style.zIndex="720";ov.id="readyOv";ov.innerHTML='<div class="modal wide" id="readyModal" style="max-height:84vh;display:flex;flex-direction:column"></div>';ov.addEventListener("click",function(e){if(e.target===ov)ov.remove();});document.body.appendChild(ov);renderReady();}
-function renderReady(){var m=document.getElementById("readyModal");if(!m)return;var list=readyData();var h='<div class="mh">\uD83D\uDCC5 Opleverprognose ('+list.length+' projecten) <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">\u00D7</button></div>';h+='<div style="font-size:11px;color:var(--t2);margin:2px 0 8px">Vuistregel: laatste dag bij bankwerk + 6 werkdagen (weekends/feestdagen niet meegeteld). Datums onder voorbehoud zolang niet alle fases ingepland zijn.</div>';if(!list.length){h+='<div style="padding:24px;text-align:center;color:var(--t3)">Geen ingeplande projecten.</div>';}else{h+='<div style="flex:1;overflow:auto">';list.forEach(function(p){var kt=p.maxKlaar!=null?fmtDMY(p.maxKlaar):"\u2014";h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 2px;border-bottom:1px solid var(--line);padding-bottom:3px"><div style="font-weight:800;font-size:12.5px">'+escapeHtml(p.project)+(p.klant?(' <span style="font-weight:600;color:var(--t2)">\u00B7 '+escapeHtml(p.klant)+'</span>'):"")+'</div><div style="font-weight:800;font-size:12.5px;color:'+(p.maxKlaar!=null?"var(--grn)":"var(--t3)")+'">klaar: '+kt+'</div></div>';if(p.unplanned>0)h+='<div style="font-size:10.5px;color:var(--amb);font-weight:700;margin-bottom:3px">\u26A0 '+p.unplanned+' fase(s) nog niet ingepland \u2014 datum onder voorbehoud</div>';h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px"><tbody>';p.fases.forEach(function(f){var fa=escapeHtml(f.j.fase||"");var om=escapeHtml(cleanDesc(f.j.nr,f.j.desc||""));if(f.planned){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t2)">bankwerk t.e.m. '+fmtDMY(f.endG)+'</td><td style="padding:3px 8px;white-space:nowrap;font-weight:700">klaar '+fmtDMY(f.klaarG)+'</td></tr>';}else{h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;color:var(--amb)" colspan="2">nog in te plannen</td></tr>';}});h+='</tbody></table>';});h+='</div>';}h+='<div class="mact" style="margin-top:8px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';m.innerHTML=h;}
-
-
-function r4Stand(j){var rs=(j&&j.routes)||[];var r=null;for(var i=0;i<rs.length;i++){if(/r4/i.test(rs[i].route||"")){r=rs[i];break;}}if(!r)r=rs[0];if(!r)return "\u2014";return (r.cel&&String(r.cel).trim())?r.cel:(r.route||"\u2014");}
-function maintainProdDone(){try{if(!S.jobs)return;var done=JSON.parse(localStorage.getItem("obp_prodDone")||"{}");var seen=JSON.parse(localStorage.getItem("obp_prodSeen")||"{}");var act={},any={};(S.jobs||[]).forEach(function(j){if(!j.fase)return;var pk=j.project||j.nr||"(zonder project)";any[pk]=true;if(!j.done)act[pk]=true;});var today=new Date().toISOString().slice(0,10);var ch=false;Object.keys(any).forEach(function(pk){if(act[pk]){if(!seen[pk]){seen[pk]=1;ch=true;}if(done[pk]){delete done[pk];ch=true;}}else{if(seen[pk]&&!done[pk]){done[pk]=today;ch=true;}}});if(ch){localStorage.setItem("obp_prodDone",JSON.stringify(done));localStorage.setItem("obp_prodSeen",JSON.stringify(seen));}}catch(e){}}
-function _prodDoneMap(){try{return JSON.parse(localStorage.getItem("obp_prodDone")||"{}");}catch(e){return {};}}
-function _prodClosedGet(){try{return JSON.parse(localStorage.getItem("obp_prodClosed")||"{}");}catch(e){return {};}}
-function _prodClosedSet(o){try{localStorage.setItem("obp_prodClosed",JSON.stringify(o));}catch(e){}}
-function toggleProdProj(pk){var o=_prodClosedGet();o[pk]=!o[pk];_prodClosedSet(o);renderReady();}
-function _afgOpenGet(){try{return localStorage.getItem("obp_afgOpen")==="1";}catch(e){return false;}}
-function toggleAfg(){try{localStorage.setItem("obp_afgOpen",_afgOpenGet()?"0":"1");}catch(e){}renderReady();}
-function _fmtISO(iso){var p=String(iso||"").split("-");return p.length===3?(p[2]+"-"+p[1]+"-"+p[0]):iso;}
-function prodData(){if(typeof computeSpans==="function")computeSpans();var done=_prodDoneMap();var byP={};(S.jobs||[]).forEach(function(j){if(!j.fase)return;var pk=j.project||j.nr||"(zonder project)";if(!byP[pk])byP[pk]={project:pk,klant:"",active:[],doneCount:0,maxKlaar:null,unplanned:0};if(!byP[pk].klant&&j.klant)byP[pk].klant=j.klant;if(j.done){byP[pk].doneCount++;}else{var endG=faseEndG(j);if(endG==null){byP[pk].active.push({j:j,planned:false});byP[pk].unplanned++;}else{var kg=addWorkdays(endG,6);byP[pk].active.push({j:j,planned:true,endG:endG,klaarG:kg});if(byP[pk].maxKlaar==null||kg>byP[pk].maxKlaar)byP[pk].maxKlaar=kg;}}});var active=[],afg=[];Object.keys(byP).forEach(function(k){var p=byP[k];if(p.active.length>0)active.push(p);else if(p.doneCount>0&&done[k]){p.afgDate=done[k];afg.push(p);}});active.sort(function(a,b){if(a.maxKlaar==null&&b.maxKlaar==null)return a.project<b.project?-1:1;if(a.maxKlaar==null)return 1;if(b.maxKlaar==null)return -1;return a.maxKlaar-b.maxKlaar;});active.forEach(function(p){p.active.sort(function(a,b){if(!a.planned&&!b.planned)return a.j.fase<b.j.fase?-1:1;if(!a.planned)return 1;if(!b.planned)return -1;return a.endG-b.endG;});});afg.sort(function(a,b){return (a.afgDate<b.afgDate)?1:-1;});return {active:active,afg:afg};}
-function openReady(){var ov=document.createElement("div");ov.className="ov";ov.style.zIndex="720";ov.id="readyOv";ov.innerHTML='<div class="modal wide" id="readyModal" style="max-height:84vh;display:flex;flex-direction:column"></div>';ov.addEventListener("click",function(e){if(e.target===ov)ov.remove();});document.body.appendChild(ov);renderReady();}
-function renderReady(){var m=document.getElementById("readyModal");if(!m)return;var data=prodData();var act=data.active,afg=data.afg;var closed=_prodClosedGet();
- var h='<div class="mh">\uD83D\uDCC5 Productieklaar ('+act.length+' in productie) <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">\u00D7</button></div>';
- h+='<div style="font-size:11px;color:var(--t2);margin:2px 0 8px">Vuistregel: laatste dag bij bankwerk + 6 werkdagen (weekends/feestdagen niet meegeteld). Kolom R4 = huidige stand van de fase. Klik op een projecttitel om in/uit te klappen.</div>';
- h+='<div style="flex:1;overflow:auto">';
- if(!act.length){h+='<div style="padding:16px;text-align:center;color:var(--t3)">Geen projecten in productie.</div>';}
- act.forEach(function(p){var isC=!!closed[p.project];var kt=p.maxKlaar!=null?fmtDMY(p.maxKlaar):"\u2014";
-  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 2px;border-bottom:1px solid var(--line);padding-bottom:3px;cursor:pointer" onclick="toggleProdProj(&#39;'+escapeHtml(p.project)+'&#39;)"><div style="font-weight:800;font-size:12.5px">'+(isC?"\u25B8":"\u25BE")+' '+escapeHtml(p.project)+(p.klant?(' <span style="font-weight:600;color:var(--t2)">\u00B7 '+escapeHtml(p.klant)+'</span>'):"")+'</div><div style="font-weight:800;font-size:12.5px;color:'+(p.maxKlaar!=null?"var(--grn)":"var(--t3)")+'">productieklaar: '+kt+'</div></div>';
-  if(p.unplanned>0&&!isC)h+='<div style="font-size:10.5px;color:var(--amb);font-weight:700;margin-bottom:3px">\u26A0 '+p.unplanned+' fase(s) nog niet ingepland \u2014 datum onder voorbehoud</div>';
-  if(!isC){h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px"><thead><tr style="color:var(--t3)"><th style="text-align:left;padding:2px 8px;font-weight:600">Fase</th><th style="text-align:left;padding:2px 8px;font-weight:600">Omschrijving</th><th style="text-align:left;padding:2px 8px;font-weight:600">R4</th><th style="text-align:left;padding:2px 8px;font-weight:600">Bankwerk t.e.m.</th><th style="text-align:left;padding:2px 8px;font-weight:600">Productieklaar</th></tr></thead><tbody>';
-   p.active.forEach(function(f){var fa=escapeHtml(f.j.fase||"");var om=escapeHtml(cleanDesc(f.j.nr,f.j.desc||""));var r4=escapeHtml(r4Stand(f.j));if(f.planned){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap">'+r4+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t2)">'+fmtDMY(f.endG)+'</td><td style="padding:3px 8px;white-space:nowrap;font-weight:700">'+fmtDMY(f.klaarG)+'</td></tr>';}else{h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap">'+r4+'</td><td style="padding:3px 8px;color:var(--amb)" colspan="2">nog in te plannen</td></tr>';}});
-   h+='</tbody></table>';}
- });
- if(afg.length){var ao=_afgOpenGet();h+='<div style="margin-top:14px;border-top:2px solid var(--line);padding-top:6px"><div style="font-weight:800;font-size:12.5px;cursor:pointer;color:var(--t2)" onclick="toggleAfg()">'+(ao?"\u25BE":"\u25B8")+' \u2713 Afgewerkt ('+afg.length+')</div>';
-  if(ao){h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px"><tbody>';afg.forEach(function(p){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+escapeHtml(p.project)+'</td><td style="padding:3px 8px;color:var(--t2)">'+escapeHtml(p.klant||"")+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t3)">afgewerkt'+(p.afgDate?(' op '+escapeHtml(_fmtISO(p.afgDate))):"")+'</td></tr>';});h+='</tbody></table>';}
-  h+='</div>';}
- h+='</div>';
- h+='<div class="mact" style="margin-top:8px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';
- m.innerHTML=h;}
-
-
-
-function baseProject(j){var s=String((j&&(j.project||j.nr))||"").trim();var m=s.match(/^(P\d+-\d+(?:_\d+)?)/i);return m?m[1]:(s||"(zonder project)");}
-function faseLabel(j){if(j&&j.fase&&String(j.fase).trim())return String(j.fase).trim();var s=String((j&&(j.nr||j.project))||"");var m=s.match(/^P\d+-\d+(?:_\d+)?-(\d+)(?:-(.+))?$/i);if(m)return m[1]+(m[2]?(" "+m[2]):"");return s;}
-function maintainProdDone(){try{if(!S.jobs)return;var done=JSON.parse(localStorage.getItem("obp_prodDone")||"{}");var seen=JSON.parse(localStorage.getItem("obp_prodSeen")||"{}");var act={},any={};(S.jobs||[]).forEach(function(j){if(!(j.project||j.nr||j.fase))return;var pk=baseProject(j);any[pk]=true;if(!j.done)act[pk]=true;});var today=new Date().toISOString().slice(0,10);var ch=false;Object.keys(any).forEach(function(pk){if(act[pk]){if(!seen[pk]){seen[pk]=1;ch=true;}if(done[pk]){delete done[pk];ch=true;}}else{if(seen[pk]&&!done[pk]){done[pk]=today;ch=true;}}});if(ch){localStorage.setItem("obp_prodDone",JSON.stringify(done));localStorage.setItem("obp_prodSeen",JSON.stringify(seen));}}catch(e){}}
-function prodData(){if(typeof computeSpans==="function")computeSpans();var done=_prodDoneMap();var byP={};(S.jobs||[]).forEach(function(j){if(!(j.project||j.nr||j.fase))return;var pk=baseProject(j);if(!byP[pk])byP[pk]={project:pk,klant:"",active:[],doneCount:0,maxKlaar:null,unplanned:0};if(!byP[pk].klant&&j.klant)byP[pk].klant=j.klant;if(j.done){byP[pk].doneCount++;}else{var endG=faseEndG(j);if(endG==null){byP[pk].active.push({j:j,planned:false});byP[pk].unplanned++;}else{var kg=addWorkdays(endG,6);byP[pk].active.push({j:j,planned:true,endG:endG,klaarG:kg});if(byP[pk].maxKlaar==null||kg>byP[pk].maxKlaar)byP[pk].maxKlaar=kg;}}});var active=[],afg=[];Object.keys(byP).forEach(function(k){var p=byP[k];if(p.active.length>0)active.push(p);else if(p.doneCount>0&&done[k]){p.afgDate=done[k];afg.push(p);}});active.sort(function(a,b){if(a.maxKlaar==null&&b.maxKlaar==null)return a.project<b.project?-1:1;if(a.maxKlaar==null)return 1;if(b.maxKlaar==null)return -1;return a.maxKlaar-b.maxKlaar;});active.forEach(function(p){p.active.sort(function(a,b){var fa=faseLabel(a.j),fb=faseLabel(b.j);if(!a.planned&&!b.planned)return fa<fb?-1:1;if(!a.planned)return 1;if(!b.planned)return -1;return a.endG-b.endG;});});afg.sort(function(a,b){return (a.afgDate<b.afgDate)?1:-1;});return {active:active,afg:afg};}
-function renderReady(){var m=document.getElementById("readyModal");if(!m)return;var data=prodData();var act=data.active,afg=data.afg;var closed=_prodClosedGet();
- var h='<div class="mh">\uD83D\uDCC5 Productieklaar ('+act.length+' in productie) <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">\u00D7</button></div>';
- h+='<div style="font-size:11px;color:var(--t2);margin:2px 0 8px">Vuistregel: laatste dag bij bankwerk + 6 werkdagen (weekends/feestdagen niet meegeteld). Kolom R4 = huidige stand van de fase. Klik op een projecttitel om in/uit te klappen.</div>';
- h+='<div style="flex:1;overflow:auto">';
- if(!act.length){h+='<div style="padding:16px;text-align:center;color:var(--t3)">Geen projecten in productie.</div>';}
- act.forEach(function(p){var isC=!!closed[p.project];var kt=p.maxKlaar!=null?fmtDMY(p.maxKlaar):"\u2014";
-  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 2px;border-bottom:1px solid var(--line);padding-bottom:3px;cursor:pointer" onclick="toggleProdProj(&#39;'+escapeHtml(p.project)+'&#39;)"><div style="font-weight:800;font-size:12.5px">'+(isC?"\u25B8":"\u25BE")+' '+escapeHtml(p.project)+(p.klant?(' <span style="font-weight:600;color:var(--t2)">\u00B7 '+escapeHtml(p.klant)+'</span>'):"")+'</div><div style="font-weight:800;font-size:12.5px;color:'+(p.maxKlaar!=null?"var(--grn)":"var(--t3)")+'">productieklaar: '+kt+'</div></div>';
-  if(p.unplanned>0&&!isC)h+='<div style="font-size:10.5px;color:var(--amb);font-weight:700;margin-bottom:3px">\u26A0 '+p.unplanned+' fase(s) nog niet ingepland \u2014 datum onder voorbehoud</div>';
-  if(!isC){h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px"><thead><tr style="color:var(--t3)"><th style="text-align:left;padding:2px 8px;font-weight:600">Fase</th><th style="text-align:left;padding:2px 8px;font-weight:600">Omschrijving</th><th style="text-align:left;padding:2px 8px;font-weight:600">R4</th><th style="text-align:left;padding:2px 8px;font-weight:600">Bankwerk t.e.m.</th><th style="text-align:left;padding:2px 8px;font-weight:600">Productieklaar</th></tr></thead><tbody>';
-   p.active.forEach(function(f){var fa=escapeHtml(faseLabel(f.j));var om=escapeHtml(cleanDesc(f.j.nr,f.j.desc||""));var r4=escapeHtml(r4Stand(f.j));if(f.planned){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap">'+r4+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t2)">'+fmtDMY(f.endG)+'</td><td style="padding:3px 8px;white-space:nowrap;font-weight:700">'+fmtDMY(f.klaarG)+'</td></tr>';}else{h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap">'+r4+'</td><td style="padding:3px 8px;color:var(--amb)" colspan="2">nog in te plannen</td></tr>';}});
-   h+='</tbody></table>';}
- });
- if(afg.length){var ao=_afgOpenGet();h+='<div style="margin-top:14px;border-top:2px solid var(--line);padding-top:6px"><div style="font-weight:800;font-size:12.5px;cursor:pointer;color:var(--t2)" onclick="toggleAfg()">'+(ao?"\u25BE":"\u25B8")+' \u2713 Afgewerkt ('+afg.length+')</div>';
-  if(ao){h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px"><tbody>';afg.forEach(function(p){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+escapeHtml(p.project)+'</td><td style="padding:3px 8px;color:var(--t2)">'+escapeHtml(p.klant||"")+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t3)">afgewerkt'+(p.afgDate?(' op '+escapeHtml(_fmtISO(p.afgDate))):"")+'</td></tr>';});h+='</tbody></table>';}
-  h+='</div>';}
- h+='</div>';
- h+='<div class="mact" style="margin-top:8px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';
- m.innerHTML=h;}
-
-
-
-function _rsParse(s){var m=String(s||"").match(/^(P\d+-\d+(?:_\d+)?)-(\d+)(?:-(.+))?$/i);return m?{project:m[1],fase:m[2],route:m[3]||""}:null;}
-function migrateRouteSplit(){try{if(!S.jobs)return false;var groups={};S.jobs.forEach(function(j){if(j.done)return;if(!/^P\d/i.test(String(j.fase||"")))return;var p=_rsParse(j.nr||j.fase);if(!p||!p.fase)return;var g=p.project+"||"+p.fase;(groups[g]=groups[g]||[]).push({j:j,p:p});});var keys=Object.keys(groups);if(!keys.length)return false;var planned=(typeof allAssigned==="function")?allAssigned():new Set();keys.forEach(function(g){var arr=groups[g];var primary=null;for(var i=0;i<arr.length;i++){if(planned.has(arr[i].j.id)){primary=arr[i];break;}}if(!primary)primary=arr[0];var routes=[];arr.forEach(function(x){var rc=x.p.route||"";var r0=(x.j.routes||[])[0]||{};routes.push({route:rc,cel:r0.cel||"",status:r0.status||""});});primary.j.project=primary.p.project;primary.j.fase=primary.p.fase;primary.j.nr=primary.p.project+"-"+primary.p.fase;primary.j.routes=(typeof dedupeRoutes==="function")?dedupeRoutes(routes):routes;arr.forEach(function(x){if(x.j===primary.j)return;Object.keys(S.plan).forEach(function(k){var a=S.plan[k];if(!a)return;var idx=a.indexOf(x.j.id);if(idx>=0){a.splice(idx,1);if(!a.length)delete S.plan[k];}});var ji=S.jobs.indexOf(x.j);if(ji>=0)S.jobs.splice(ji,1);});});return true;}catch(e){return false;}}
-
-
-
-var _prodFilter="";
-function _prodSortGet(){try{var o=JSON.parse(localStorage.getItem("obp_prodSort")||"{}");return {key:o.key||"klaar",dir:o.dir||1};}catch(e){return {key:"klaar",dir:1};}}
-function _prodSortSet(k){var c=_prodSortGet();if(c.key===k){c.dir=-c.dir;}else{c.key=k;c.dir=1;}try{localStorage.setItem("obp_prodSort",JSON.stringify(c));}catch(e){}renderReady();}
-function setProdFilter(v){_prodFilter=v;renderReady();}
-function faseAtAutorisatie(j){var rs=(j&&j.routes)||[];if(!rs.length)return false;return rs.every(function(r){return String(r.cel||"").trim().toLowerCase()==="autorisatie";});}
-(function(){try{if(typeof renderSP==="function"&&!renderSP.__autowrap){var o=renderSP;renderSP=function(){var f=S.jobs;try{S.jobs=f.filter(function(j){return !faseAtAutorisatie(j);});return o.apply(this,arguments);}finally{S.jobs=f;}};renderSP.__autowrap=1;}}catch(e){}
-try{if(typeof renderSPBadge==="function"&&!renderSPBadge.__autowrap){var b=renderSPBadge;renderSPBadge=function(){var f=S.jobs;try{S.jobs=f.filter(function(j){return !faseAtAutorisatie(j);});return b.apply(this,arguments);}finally{S.jobs=f;}};renderSPBadge.__autowrap=1;}}catch(e){}})();
-function exportReadyXLSX(){try{var data=prodData();var rows=[["Projectnr","Klant","Fase","R4","Bankwerk t.e.m.","Productieklaar","Status"]];data.active.forEach(function(p){p.active.forEach(function(f){rows.push([p.project,p.klant||"",faseLabel(f.j),r4Stand(f.j),f.planned?fmtDMY(f.endG):"",f.planned?fmtDMY(f.klaarG):"nog in te plannen","In productie"]);});});data.afg.forEach(function(p){rows.push([p.project,p.klant||"","","","","",p.afgDate?("Afgewerkt "+_fmtISO(p.afgDate)):"Afgewerkt"]);});var ws=XLSX.utils.aoa_to_sheet(rows);var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Productieklaar");XLSX.writeFile(wb,"Productieklaar_"+new Date().toISOString().slice(0,10)+".xlsx");}catch(e){alert("Export fout: "+e);}}
-function printReady(){try{var data=prodData();var esc=escapeHtml;var body="";data.active.forEach(function(p){body+='<tr class="ph"><td colspan="4"><b>'+esc(p.project)+'</b> &middot; '+esc(p.klant||"")+' &mdash; productieklaar: '+(p.maxKlaar!=null?fmtDMY(p.maxKlaar):"\u2014")+'</td></tr>';p.active.forEach(function(f){body+='<tr><td>'+esc(faseLabel(f.j))+'</td><td>'+esc(cleanDesc(f.j.nr,f.j.desc||""))+'</td><td>'+esc(r4Stand(f.j))+'</td><td>'+(f.planned?fmtDMY(f.klaarG):"nog in te plannen")+'</td></tr>';});});if(data.afg.length){body+='<tr class="ph"><td colspan="4"><b>Afgewerkt</b></td></tr>';data.afg.forEach(function(p){body+='<tr><td>'+esc(p.project)+'</td><td>'+esc(p.klant||"")+'</td><td></td><td>'+(p.afgDate?_fmtISO(p.afgDate):"")+'</td></tr>';});}var w=window.open("","_blank");if(!w){alert("Pop-up geblokkeerd \u2014 sta pop-ups toe om te printen.");return;}w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Productieklaar</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#000;margin:24px}h1{font-size:18px;margin:0 0 12px}table{width:100%;border-collapse:collapse}th,td{text-align:left;border-bottom:.5px solid #ccc;padding:4px 8px}thead th{border-bottom:1px solid #000}.ph td{background:#f0f0f0;border-top:2px solid #000;padding-top:6px}</style></head><body><h1>Productieklaar &mdash; '+new Date().toLocaleDateString("nl-BE")+'</h1><table><thead><tr><th>Fase</th><th>Omschrijving</th><th>R4</th><th>Productieklaar</th></tr></thead><tbody>'+body+'</tbody></table></body></html>');w.document.close();w.focus();setTimeout(function(){try{w.print();}catch(e){}},400);}catch(e){alert("Print fout: "+e);}}
-function renderReady(){var m=document.getElementById("readyModal");if(!m)return;var data=prodData();var act=data.active,afg=data.afg;var closed=_prodClosedGet();var so=_prodSortGet();
- var fq=(_prodFilter||"").trim().toLowerCase();
- if(fq){act=act.filter(function(p){if(String(p.project||"").toLowerCase().indexOf(fq)>=0)return true;if(String(p.klant||"").toLowerCase().indexOf(fq)>=0)return true;return p.active.some(function(f){return faseLabel(f.j).toLowerCase().indexOf(fq)>=0||String(cleanDesc(f.j.nr,f.j.desc||"")).toLowerCase().indexOf(fq)>=0;});});}
- act=act.slice();
- if(so.key==="proj")act.sort(function(a,b){return a.project<b.project?-so.dir:(a.project>b.project?so.dir:0);});
- else if(so.key==="klant")act.sort(function(a,b){var x=(a.klant||""),y=(b.klant||"");return x<y?-so.dir:(x>y?so.dir:0);});
- else act.sort(function(a,b){var x=a.maxKlaar==null?9e9:a.maxKlaar,y=b.maxKlaar==null?9e9:b.maxKlaar;return (x-y)*so.dir;});
- function ar(k){return so.key===k?(so.dir>0?" \u25B2":" \u25BC"):"";}
- var h='<div class="mh">\uD83D\uDCC5 Productieklaar ('+act.length+(fq?(" / "+data.active.length):"")+') <button class="mx" onclick="this.closest(&#39;.ov&#39;).remove()">\u00D7</button></div>';
- h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0 6px;font-size:11px">';
- h+='<input id="prodFilter" oninput="setProdFilter(this.value)" placeholder="Filter P-nummer / klant / fase\u2026" style="flex:1;min-width:150px;padding:4px 8px;border:.5px solid var(--line);border-radius:6px;font-size:12px" value="'+escapeHtml(_prodFilter)+'">';
- h+='<span style="color:var(--t2)">Sorteer:</span>';
- h+='<button class="tbtn" style="font-size:11px;padding:3px 8px'+(so.key==="klaar"?";font-weight:800":"")+'" onclick="_prodSortSet(&#39;klaar&#39;)">Productieklaar'+ar("klaar")+'</button>';
- h+='<button class="tbtn" style="font-size:11px;padding:3px 8px'+(so.key==="proj"?";font-weight:800":"")+'" onclick="_prodSortSet(&#39;proj&#39;)">P-nummer'+ar("proj")+'</button>';
- h+='<button class="tbtn" style="font-size:11px;padding:3px 8px'+(so.key==="klant"?";font-weight:800":"")+'" onclick="_prodSortSet(&#39;klant&#39;)">Klant'+ar("klant")+'</button>';
- h+='<span style="flex:1"></span>';
- h+='<button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="exportReadyXLSX()">\u2B07 Excel</button>';
- h+='<button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="printReady()">\uD83D\uDDA8 Print</button>';
- h+='</div>';
- h+='<div style="font-size:10.5px;color:var(--t3);margin-bottom:6px">Vuistregel: laatste dag bij bankwerk + 6 werkdagen. R4 = huidige stand. Klik op een projecttitel om in/uit te klappen.</div>';
- h+='<div style="flex:1;overflow:auto">';
- if(!act.length){h+='<div style="padding:16px;text-align:center;color:var(--t3)">Geen projecten.</div>';}
- act.forEach(function(p){var isC=!!closed[p.project];var kt=p.maxKlaar!=null?fmtDMY(p.maxKlaar):"\u2014";
-  h+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 2px;border-bottom:1px solid var(--line);padding-bottom:3px;cursor:pointer" onclick="toggleProdProj(&#39;'+escapeHtml(p.project)+'&#39;)"><div style="font-weight:800;font-size:12.5px">'+(isC?"\u25B8":"\u25BE")+' '+escapeHtml(p.project)+(p.klant?(' <span style="font-weight:600;color:var(--t2)">\u00B7 '+escapeHtml(p.klant)+'</span>'):"")+'</div><div style="font-weight:800;font-size:12.5px;color:'+(p.maxKlaar!=null?"var(--grn)":"var(--t3)")+'">productieklaar: '+kt+'</div></div>';
-  if(p.unplanned>0&&!isC)h+='<div style="font-size:10.5px;color:var(--amb);font-weight:700;margin-bottom:3px">\u26A0 '+p.unplanned+' fase(s) nog niet ingepland \u2014 datum onder voorbehoud</div>';
-  if(!isC){h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px"><thead><tr style="color:var(--t3)"><th style="text-align:left;padding:2px 8px;font-weight:600">Fase</th><th style="text-align:left;padding:2px 8px;font-weight:600">Omschrijving</th><th style="text-align:left;padding:2px 8px;font-weight:600">R4</th><th style="text-align:left;padding:2px 8px;font-weight:600">Bankwerk t.e.m.</th><th style="text-align:left;padding:2px 8px;font-weight:600">Productieklaar</th></tr></thead><tbody>';
-   p.active.forEach(function(f){var fa=escapeHtml(faseLabel(f.j));var om=escapeHtml(cleanDesc(f.j.nr,f.j.desc||""));var r4=escapeHtml(r4Stand(f.j));if(f.planned){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap">'+r4+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t2)">'+fmtDMY(f.endG)+'</td><td style="padding:3px 8px;white-space:nowrap;font-weight:700">'+fmtDMY(f.klaarG)+'</td></tr>';}else{h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+fa+'</td><td style="padding:3px 8px">'+om+'</td><td style="padding:3px 8px;white-space:nowrap">'+r4+'</td><td style="padding:3px 8px;color:var(--amb)" colspan="2">nog in te plannen</td></tr>';}});
-   h+='</tbody></table>';}
- });
- if(afg.length){var ao=_afgOpenGet();h+='<div style="margin-top:14px;border-top:2px solid var(--line);padding-top:6px"><div style="font-weight:800;font-size:12.5px;cursor:pointer;color:var(--t2)" onclick="toggleAfg()">'+(ao?"\u25BE":"\u25B8")+' \u2713 Afgewerkt ('+afg.length+')</div>';
-  if(ao){h+='<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px"><tbody>';afg.forEach(function(p){h+='<tr style="border-bottom:.5px solid var(--line)"><td style="padding:3px 8px;font-weight:700;white-space:nowrap">'+escapeHtml(p.project)+'</td><td style="padding:3px 8px;color:var(--t2)">'+escapeHtml(p.klant||"")+'</td><td style="padding:3px 8px;white-space:nowrap;color:var(--t3)">afgewerkt'+(p.afgDate?(' op '+escapeHtml(_fmtISO(p.afgDate))):"")+'</td></tr>';});h+='</tbody></table>';}
-  h+='</div>';}
- h+='</div>';
- h+='<div class="mact" style="margin-top:8px"><button class="mbtn ok" onclick="this.closest(&#39;.ov&#39;).remove()">Sluiten</button></div>';
- m.innerHTML=h;
- var fi=document.getElementById("prodFilter");if(fi&&_prodFilter){try{fi.focus();fi.setSelectionRange(fi.value.length,fi.value.length);}catch(e){}}}
-
 </script>
 </body>
 </html>
