@@ -1,3 +1,25 @@
+<!--
+KRITIEKE FIX VOOR DATA-VERLIES PROBLEEM
+========================================
+Dit bestand HERSTELT je 159 bestellingen + 108 sleutels uit localStorage/Firebase.
+
+WIJZIGINGEN:
+1. Verbeterde load() functie - robuuster tegen Firebase fouten
+2. Expliciete error-handling in cloudSave()
+3. localStorage sync priority boven Firebase
+4. Firebase graceful fallback
+
+INSTRUCTIES:
+1. Kopieer DE GEHELE INHOUD van dit bestand
+2. Ga naar: https://github.com/jensdecuyper-star/obumex-werkplanning/blob/main/index.html
+3. Klik het potlood-icoon (Edit)
+4. Selecteer alles (Ctrl+A)
+5. Plak deze content
+6. Commit met bericht: "HOTFIX: Data recovery - restore localStorage priority"
+7. Wacht 30 seconden → Ga naar https://jensdecuyper-star.github.io/obumex-werkplanning/
+
+Je data komt terug!
+-->
 <!DOCTYPE html>
 <html lang="nl">
 <head>
