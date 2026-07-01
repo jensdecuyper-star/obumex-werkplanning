@@ -1181,7 +1181,7 @@ function drop(e,pid,g,ptype){
   }
   var _crossFrom=null;
   for(const id of ids){ Object.keys(S.plan).forEach(function(k){ if((S.plan[k]||[]).indexOf(id)>=0){ var cp=k.split('_').slice(1,-1).join('_'); if(cp!==pid) _crossFrom=cp; } }); }
-  if(_crossFrom){ var _fp=allPeople().find(function(p){return p.id===_crossFrom;}); var _tp=allPeople().find(function(p){return p.id===pid;}); if(!confirm('Deze order staat al bij '+((_fp&&_fp.name)||'iemand')+'. Naar '+((_tp&&_tp.name)||'een andere persoon')+' verplaatsen? Wie begint, werkt idealiter ook af.')) return; }
+  if(_crossFrom){ showMoveChoice(ids.slice(),pid,g,_crossFrom); return; }
   const dropDate=gdate(g);
   if(!S.workDays.includes(dropDate.getDay())){
     const DN=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
@@ -1201,6 +1201,44 @@ function drop(e,pid,g,ptype){
   render();
 }
 
+function showMoveChoice(ids,pid,g,fromPid){
+  var fp=allPeople().find(function(p){return p.id===fromPid;});
+  var tp=allPeople().find(function(p){return p.id===pid;});
+  var projSet={}; ids.forEach(function(id){var j=S.jobs.find(function(x){return x.id===id;}); if(j&&j.project)projSet[j.project]=1;});
+  var projList=Object.keys(projSet).join(', ');
+  window.__pendingMove={ids:ids.slice(),pid:pid,g:g};
+  var ov=document.createElement('div'); ov.className='ov'; ov.id='moveChoiceOv'; ov.style.zIndex='740';
+  var h='<div class="modal"><div class="mh">Verplaatsen naar '+escapeHtml((tp&&tp.name)||'andere persoon')+' <button class="mx" onclick="closeMoveChoice()">&#215;</button></div>';
+  h+='<div class="info">Deze order staat nu bij <b>'+escapeHtml((fp&&fp.name)||'iemand')+'</b>. Wie begint, werkt idealiter ook af.</div>';
+  h+='<div style="display:flex;flex-direction:column;gap:8px">';
+  h+='<button class="mbtn ok" onclick="doMoveChoice(false)">Enkel deze order verplaatsen</button>';
+  h+='<button class="mbtn ok" onclick="doMoveChoice(true)">Volledig project verplaatsen'+(projList?(' ('+escapeHtml(projList)+')'):'')+'</button>';
+  h+='<button class="mbtn" onclick="closeMoveChoice()">Annuleer</button></div></div>';
+  ov.innerHTML=h;
+  ov.addEventListener('click',function(e){if(e.target===ov)closeMoveChoice();});
+  document.body.appendChild(ov);
+}
+function closeMoveChoice(){ var ov=document.getElementById('moveChoiceOv'); if(ov)ov.remove(); window.__pendingMove=null; }
+function doMoveChoice(whole){
+  var pm=window.__pendingMove; var ov=document.getElementById('moveChoiceOv'); if(ov)ov.remove(); window.__pendingMove=null;
+  if(!pm)return;
+  var ids=pm.ids, pid=pm.pid, g=pm.g;
+  var dropDate=gdate(g);
+  if(!S.workDays.includes(dropDate.getDay())){
+    var DN=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
+    if(!confirm(DN[dropDate.getDay()]+' is geen werkdag. Toch inplannen?'))return;
+  }
+  var moveIds=ids.slice();
+  if(whole){
+    var projs={}; ids.forEach(function(id){var j=S.jobs.find(function(x){return x.id===id;}); if(j&&j.project)projs[j.project]=1;});
+    var planned={}; Object.keys(S.plan).forEach(function(k){(S.plan[k]||[]).forEach(function(id){planned[id]=1;});});
+    var extra=[]; S.jobs.forEach(function(j){ if(j.project&&projs[j.project]&&planned[j.id])extra.push(j.id); });
+    var seen={}; moveIds=extra.concat(ids).filter(function(id){if(seen[id])return false;seen[id]=1;return true;});
+  }
+  moveIds.forEach(function(id){removePlanEntry(id);});
+  moveIds.forEach(function(id){placePlan(pid,g,id);});
+  _ins=null; spillOver(pid,g); render();
+}
 // Helper: verwijder een job-id uit alle plan-entries
 function removePlanEntry(id){
   Object.keys(S.plan).forEach(k=>{
