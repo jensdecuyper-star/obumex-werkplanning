@@ -2566,6 +2566,7 @@ function threeWayMerge(base,ours,theirs){
   });
   return m;
 }
+function _stripUndef(v){if(Array.isArray(v))return v.filter(function(x){return x!==undefined;}).map(_stripUndef);if(v&&typeof v==='object'){var o={};for(var k in v){if(v[k]!==undefined)o[k]=_stripUndef(v[k]);}return o;}return v;}
 function cloudSave(){
   if(!_docRef||_applyingRemote||!_cloudReady)return;
   _pendingWrite=true;
@@ -2577,6 +2578,7 @@ function cloudSave(){
       var theirs=snap.exists?_projectKeys(snap.data()):{};
       var merged=threeWayMerge(_lastRemote||theirs,ours,theirs);
       merged._ts=Date.now();
+      merged=_stripUndef(merged);
       _lastAppliedTs=merged._ts;
       return _docRef.set(merged).then(function(){
         _lastRemote=JSON.parse(JSON.stringify(_projectKeys(merged)));
