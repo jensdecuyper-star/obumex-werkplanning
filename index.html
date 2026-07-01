@@ -930,9 +930,13 @@ function contChipHTML(sp,pid,g){
   var div=document.createElement('div');
   div.className='aw bw aw-cont';
   if(wc){div.style.borderLeft='4px solid '+wc;div.style.background=wc+'22';}
+  div.draggable=!j.blocked;
+  div.setAttribute('ondragstart',"ds(event,'"+j.id+"','"+pkey(pid,g)+"')");
+  div.setAttribute('ondragend','de()');
+  div.setAttribute('oncontextmenu',"showChipCtx(event,'"+j.id+"','"+pid+"',"+g+")");
   div.setAttribute('title', escapeHtml((j.project||j.nr||'')+' '+(j.klant||'')+' — deel '+sp.part+'/'+n+' — vervolg van order'));
   if(_cardMode==='compact'){
-    div.innerHTML='<div class="aw-body awc"><div class="awc-top"><span class="cont-arrow">↳</span><span class="aw-proj">'+escapeHtml(j.project||j.nr||'')+'</span></div><div class="awc-sub"><span class="cont-badge">deel '+sp.part+'/'+n+'</span><span class="awc-hrs">'+sp.hrs+'u</span></div></div>';
+    div.innerHTML='<div class="aw-body awc"><div class="awc-top"><span class="cont-arrow">↳</span><span class="aw-proj">'+escapeHtml(j.project||j.nr||'')+'</span></div>'+(j.klant?('<div class="awc-klant2">'+escapeHtml(j.klant)+'</div>'):'')+'<div class="awc-fase">'+(j.fase?('<b>'+escapeHtml(j.fase)+'</b> '):'')+(j.desc?escapeHtml(cleanDesc(j.nr,j.desc)):'')+'</div><div class="awc-sub"><span class="cont-badge">deel '+sp.part+'/'+n+'</span><span class="awc-hrs">'+sp.hrs+'u</span></div></div>';
     return div.outerHTML;
   }
   div.innerHTML='<div class="aw-body"><div class="aw-top"><span class="aw-proj"><span class="cont-arrow">↳</span> '+escapeHtml(j.project||j.nr||'')+'</span><span class="aw-del" title="Hele order terug naar wachtrij" onclick="removeOrder(\''+j.id+'\')">&#215;</span></div>'+(j.klant?('<div class="aw-klantline"><span class="klant-dot" style="background:'+wc+'"></span>'+escapeHtml(j.klant)+'</div>'):'')+'<div class="aw-fase"><span class="aw-fasenr">'+escapeHtml(j.fase||'')+'</span></div><div class="cont-line"><span class="cont-badge">deel '+sp.part+'/'+n+'</span><span class="cont-h">'+sp.hrs+'u</span></div></div>';
@@ -1175,6 +1179,9 @@ function drop(e,pid,g,ptype){
     if(!j)continue;
     if(jtype(j)!==ptype){toast(j.cel+'-order hoort niet bij '+(ptype==='cnc'?'CNC':'Bankwerk'));return;}
   }
+  var _crossFrom=null;
+  for(const id of ids){ Object.keys(S.plan).forEach(function(k){ if((S.plan[k]||[]).indexOf(id)>=0){ var cp=k.split('_').slice(1,-1).join('_'); if(cp!==pid) _crossFrom=cp; } }); }
+  if(_crossFrom){ var _fp=allPeople().find(function(p){return p.id===_crossFrom;}); var _tp=allPeople().find(function(p){return p.id===pid;}); if(!confirm('Deze order staat al bij '+((_fp&&_fp.name)||'iemand')+'. Naar '+((_tp&&_tp.name)||'een andere persoon')+' verplaatsen? Wie begint, werkt idealiter ook af.')) return; }
   const dropDate=gdate(g);
   if(!S.workDays.includes(dropDate.getDay())){
     const DN=['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
